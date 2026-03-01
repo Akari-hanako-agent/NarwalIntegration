@@ -145,7 +145,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
 
     async def _async_render(self, static_map, display, new_key) -> None:
         """Render the map image in an executor thread."""
-        # Robot position from display_map (convert dm → grid pixels)
+        # Robot position from display_map (convert to grid pixels)
         robot_x = None
         robot_y = None
         robot_heading = None
@@ -156,6 +156,16 @@ class NarwalMapCamera(NarwalEntity, Camera):
             if grid_pos is not None:
                 robot_x, robot_y = grid_pos
                 robot_heading = display.robot_heading
+                if self._render_count < 3:
+                    _LOGGER.debug(
+                        "transform: raw=(%.2f,%.2f) res=%d origin=(%d,%d) "
+                        "→ pixel=(%.1f,%.1f) map=%dx%d",
+                        display.robot_x, display.robot_y,
+                        static_map.resolution,
+                        static_map.origin_x, static_map.origin_y,
+                        robot_x, robot_y,
+                        static_map.width, static_map.height,
+                    )
 
         # Dock position and room names from static map
         dock_x = static_map.dock_x

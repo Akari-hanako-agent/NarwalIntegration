@@ -329,12 +329,13 @@ def render_map_png(
         dock_size = max(4, min(width, height) // 60)
         _draw_dock(draw, int(dock_x), height - 1 - int(dock_y), dock_size)
 
-    # Draw robot position (flip Y)
+    # Draw robot position (flip Y) — skip if out of bounds
     if robot_x is not None and robot_y is not None:
         rx = int(robot_x)
         ry = height - 1 - int(robot_y)
-        radius = max(3, min(width, height) // 80)
-        _draw_robot(draw, rx, ry, robot_heading, radius)
+        if 0 <= rx < width and 0 <= ry < height:
+            radius = max(3, min(width, height) // 80)
+            _draw_robot(draw, rx, ry, robot_heading, radius)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
