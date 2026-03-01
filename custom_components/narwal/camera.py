@@ -28,7 +28,7 @@ _MIN_RENDER_INTERVAL = 2
 
 # Debug view: blank canvas with robot dot + trail.
 # Set to False to use the real map renderer instead.
-_DEBUG_VIEW = False
+_DEBUG_VIEW = True
 _DEBUG_CANVAS_SIZE = 500  # pixels
 _DEBUG_TRAIL_LENGTH = 200  # recent positions to keep
 
