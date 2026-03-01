@@ -10,7 +10,7 @@ This integration uses a **local WebSocket connection on port 9002**. Only models
 
 | Model | Internal Code | Local Port 9002 | Status | Notes |
 |-------|---------------|:---------------:|--------|-------|
-| **Narwal Flow** | AX12 | Yes | **Working** | Fully tested — all features functional |
+| **Narwal Flow** | AX12 | Yes | **Working** | Core vacuum control and sensors functional; map in progress |
 | **Freo Z10 Ultra** | — | Yes | **Partial** | Connects and broadcasts; state mapping and wake reliability under investigation |
 | **Freo X Ultra** | AX18/AX19 | Varies | **Under Investigation** | Some units have port 9002, others use ZeroMQ on port 6789 |
 | **Freo X Plus** | — | No | **Not Supported** | Cloud-only (MQTT via Narwal servers) — no local API available |
@@ -35,26 +35,25 @@ If port 9002 is open, please [open an issue](https://github.com/sjmotew/NarwalIn
 - **Start / Stop / Pause / Resume** cleaning
 - **Return to dock**
 - **Locate** — robot announces "Robot is here"
-- **Fan speed control** — Quiet, Normal, Strong, Max
+- **Fan speed control** — Quiet, Normal, Strong, Max (set-only; robot does not broadcast current level)
 
 ### Sensors
 - **Battery level** — real-time percentage from robot broadcasts
-- **Cleaning area** — square meters cleaned in current session
-- **Cleaning time** — current session duration in seconds
+- **Cleaning area** — square meters cleaned in current session (only populated during active cleaning)
+- **Cleaning time** — current session duration (only populated during active cleaning)
 - **Firmware version** — diagnostic sensor
-- **Docked status** — binary sensor (on dock / off dock), including charge-complete detection
+- **Docked status** — binary sensor (on dock / off dock)
 
-### Map
-- **Floor plan image** — rendered as a color-coded room map
-- Supports 22+ rooms with distinct colors and wall borders
-- Dock position indicator
-- Room names from robot's stored map data
+### Map (In Progress)
+- **Floor plan image** — basic color-coded room map rendered from robot's stored map data
+- Map rendering is functional but still being refined — dock position, room labels, and map freshness are not yet reliable
+- The robot may return an outdated map until a new clean is run
 
 ### Connectivity
 - **Real-time updates** — WebSocket push (~1.5s when robot is awake)
 - **Auto-reconnect** with exponential backoff
-- **Wake system** — automatic wake commands to rouse a sleeping robot
-- **Keepalive heartbeat** — prevents robot from going back to sleep during a session
+- **Wake system** — sends wake commands to rouse a sleeping robot (best-effort; not always reliable, especially after long idle periods)
+- **Keepalive heartbeat** — helps prevent robot from going back to sleep during a session
 - **Polling fallback** — 60-second poll if push updates stop
 
 ## Installation
@@ -95,48 +94,51 @@ If port 9002 is open, please [open an issue](https://github.com/sjmotew/NarwalIn
 
 ## How It Works
 
-This integration communicates with your Narwal vacuum over a local WebSocket connection on port 9002. The vacuum uses a binary protobuf-like protocol — the integration reverse-engineered this protocol to provide full local control without any cloud dependency.
+This integration communicates with your Narwal vacuum over a local WebSocket connection on port 9002. The vacuum uses a binary protobuf-like protocol — the integration reverse-engineered this protocol to provide local control without any cloud dependency.
 
-When the robot is awake, it broadcasts status updates every ~1.5 seconds. The integration listens to these broadcasts and keeps HA entities up to date in real time. Commands (start, stop, pause, etc.) are sent over the same WebSocket connection with sub-second response times.
+When the robot is awake, it broadcasts status updates every ~1.5 seconds. The integration listens to these broadcasts and keeps HA entities up to date in real time. Commands (start, stop, pause, etc.) are sent over the same WebSocket connection.
 
 ### Robot Sleep Behavior
 
-The Narwal vacuum enters a low-power sleep mode when idle. During sleep, the WebSocket port stays open but the robot does not respond to commands or send broadcasts. The integration includes an automatic wake system that sends a sequence of wake commands derived from the official app's protocol. A keepalive heartbeat runs every 15 seconds to prevent the robot from going back to sleep.
+The Narwal vacuum enters a low-power sleep mode when idle. During sleep, the WebSocket port stays open but the robot may not respond to commands or send broadcasts. The integration sends wake commands derived from the official app's protocol, but **wake reliability varies** — the robot may take 30+ seconds to respond, or may not respond at all until you open the Narwal app once or start a clean from the app.
 
-If the robot is in deep sleep (e.g., after being idle for a long time), it may take up to 30 seconds to wake — or it may require opening the Narwal app once to wake it initially. Once awake, the keepalive system maintains responsiveness.
+A keepalive heartbeat runs every 15 seconds to help prevent the robot from going back to sleep once awake, but this is not guaranteed — the robot can still drop into deep sleep during long idle periods.
 
 ## Known Limitations
 
-### Confirmed Working
-- All vacuum controls (start, stop, pause, resume, return to dock, locate)
-- Battery level, cleaning area/time, firmware version sensors
-- Docked status detection (including fully-charged state)
-- Map image rendering with room colors and dock position
+### Working
+- Vacuum controls (start, stop, pause, resume, return to dock, locate)
+- Battery level sensor
+- Cleaning area and cleaning time sensors (populated during active cleaning only)
+- Firmware version sensor
+- Docked status detection
 
-### Partial / In Progress
-- **Fan speed read-back** — You can set fan speed, and the integration tracks what you set. However, if you change fan speed via the Narwal app, the integration won't know. The robot protocol does not broadcast the current fan speed setting.
-- **Map updates during cleaning** — The robot sends `display_map` broadcasts during cleaning; this is handled but needs more real-world testing.
+### In Progress
+- **Map rendering** — A basic floor plan image is generated from the robot's stored map data. However, dock position overlay is not consistently accurate, the robot may return a stale/outdated map, and room labels need work. This feature is actively being improved.
+- **Fan speed** — You can set fan speed, but the robot does not broadcast its current level. The integration tracks the last value you set; changes made via the Narwal app won't be reflected.
+- **Live map updates** — The robot sends position broadcasts during cleaning, but real-time map overlay needs more testing.
 
 ### Not Yet Implemented
-- **Camera / video streaming** — The robot's camera can be triggered locally (`developer/take_picture`), but images are AES-encrypted and the decryption key is stored on the phone app. Video streaming uses Agora (cloud-only) and cannot work locally.
 - **Room-specific cleaning** — The protocol supports it, but the room selection payload format needs further decoding.
 - **Cleaning history / statistics** — Not implemented.
+- **Camera / video streaming** — Images are AES-encrypted (key on phone app only). Video uses Agora (cloud-only). Not feasible locally.
 
 ### Known Issues
-- **Wake from deep sleep** — The integration will retry automatically, but the first interaction after a long idle period may be delayed. Opening the Narwal app once can help "prime" the robot.
-- **Single connection** — The Narwal vacuum only handles one WebSocket connection reliably. Close the Narwal app before using the HA integration to avoid interference.
-- **Local network only** — This integration does not use cloud services. Your HA instance must be on the same network as the vacuum.
+- **Wake from deep sleep is unreliable** — The robot may not respond to wake commands after long idle periods. Opening the Narwal app or starting a clean from the app can help "prime" the robot. Once awake, the integration keeps it responsive, but it can still drop back to sleep.
+- **Single connection** — The vacuum only handles one WebSocket connection reliably. Close the Narwal app before using the HA integration to avoid interference.
+- **Map may be stale** — The robot can return an old map from a previous layout. Running a new clean cycle typically refreshes it.
+- **Local network only** — Your HA instance must be on the same network as the vacuum.
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | "Cannot connect" during setup | Verify the vacuum's IP address and that port 9002 is not blocked. The robot must be powered on. |
-| Entities show "Unavailable" | The robot may be asleep. Open the Narwal app briefly to wake it, then the integration will take over. |
-| Map not showing | The map requires a successful `get_map` response. If the robot was asleep at startup, the map appears after it wakes. |
+| Entities show "Unavailable" | The robot may be asleep. Open the Narwal app briefly or start a clean to wake it, then the integration will take over. |
+| Map not showing or outdated | The map requires a successful `get_map` response. If the robot was asleep, the map appears after it wakes. The robot may return a stale map — running a new clean typically refreshes it. |
 | Commands not responding | Ensure the Narwal app is closed — two simultaneous WebSocket connections cause issues. |
 | Fan speed shows unknown | Set fan speed once from HA; it will track from that point. The robot doesn't broadcast this value. |
-| Docked status wrong | The integration uses multiple signals to detect dock status. If you see issues, please report with debug logs. |
+| Docked status wrong | The integration uses multiple signals to detect dock status. If you see issues, please [report a bug](https://github.com/sjmotew/NarwalIntegration/issues/new/choose) with debug logs. |
 
 ## Reporting Issues
 
