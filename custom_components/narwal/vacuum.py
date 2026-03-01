@@ -93,8 +93,12 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         return self._last_fan_speed
 
     async def async_start(self) -> None:
-        """Start cleaning."""
-        await self.coordinator.client.start()
+        """Start or resume cleaning."""
+        state = self.coordinator.data
+        if state and state.is_paused:
+            await self.coordinator.client.resume()
+        else:
+            await self.coordinator.client.start()
 
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""
