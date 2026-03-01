@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import time
 
-from homeassistant.components.camera import Camera, CameraEntityFeature
+from aiohttp import web
+
+from homeassistant.components.camera import Camera, CameraEntityFeature, async_get_still_stream
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -67,12 +69,21 @@ class NarwalMapCamera(NarwalEntity, Camera):
     def camera_image(
         self, width: int | None = None, height: int | None = None,
     ) -> bytes | None:
-        """Return the current map as a PNG image.
-
-        Called by HA's MJPEG stream handler at frame_interval cadence.
-        Returns cached bytes — rendering happens in _handle_coordinator_update.
-        """
+        """Return the current map as a PNG image."""
         return self._cached_image
+
+    async def handle_async_mjpeg_stream(
+        self, request: web.Request,
+    ) -> web.StreamResponse | None:
+        """Serve an MJPEG stream by polling cached map frames.
+
+        Without this override the base Camera returns None, and the frontend
+        falls back to a single static snapshot that never refreshes.
+        """
+        return await async_get_still_stream(
+            request, self.async_camera_image,
+            self._attr_content_type, self._attr_frame_interval,
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
