@@ -30,7 +30,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Narwal map camera entity."""
     coordinator = entry.runtime_data
-    async_add_entities([NarwalMapCamera(coordinator)])
+    try:
+        entity = NarwalMapCamera(coordinator)
+        _LOGGER.warning("Camera entity created: unique_id=%s", entity._attr_unique_id)
+        async_add_entities([entity])
+        _LOGGER.warning("Camera entity added successfully")
+    except Exception:
+        _LOGGER.exception("Failed to set up Narwal camera entity")
 
 
 class NarwalMapCamera(NarwalEntity, Camera):
