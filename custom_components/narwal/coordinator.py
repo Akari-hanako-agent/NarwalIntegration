@@ -52,6 +52,7 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         )
         self._listen_task: asyncio.Task[None] | None = None
         self._fast_poll_remaining = 0
+        self._prev_working_status = WorkingStatus.UNKNOWN
 
     async def async_setup(self) -> None:
         """Connect to the vacuum and start the WebSocket listener.
@@ -129,6 +130,23 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             state.dock_field11, state.dock_field47,
             state.dock_sub_state, state.dock_activity,
         )
+
+        # Detect return-to-dock transition: CLEANING/CLEANING_ALT → STANDBY.
+        # Broadcast dock fields (f11, f47) are stale after docking — they only
+        # refresh via get_status() poll. Schedule an immediate poll so the UI
+        # shows DOCKED instead of IDLE within seconds instead of up to 60s.
+        if (
+            state.working_status == WorkingStatus.STANDBY
+            and self._prev_working_status
+            in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT)
+        ):
+            _LOGGER.info(
+                "Return-to-dock transition detected (CLEANING→STANDBY), "
+                "scheduling immediate dock status refresh"
+            )
+            self.hass.async_create_task(self._refresh_dock_status())
+        self._prev_working_status = state.working_status
+
         self.async_set_updated_data(state)
 
         # Broadcast arrived — switch back to normal polling if in fast mode
@@ -139,6 +157,20 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
                 "Narwal broadcast received: status=%s — normal polling restored",
                 state.working_status.name,
             )
+
+    async def _refresh_dock_status(self) -> None:
+        """Immediate get_status() after return-to-dock to refresh dock fields."""
+        try:
+            await self.client.get_status(full_update=True)
+            self.async_set_updated_data(self.client.state)
+            _LOGGER.info(
+                "Dock status refreshed: docked=%s, f11=%d, f47=%d",
+                self.client.state.is_docked,
+                self.client.state.dock_field11,
+                self.client.state.dock_field47,
+            )
+        except Exception:
+            _LOGGER.debug("Failed to refresh dock status after transition")
 
     async def _async_update_data(self) -> NarwalState:
         """Polling fallback — fetch status if no push updates arrived."""

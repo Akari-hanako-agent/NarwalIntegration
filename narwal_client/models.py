@@ -195,8 +195,8 @@ class MapDisplayData:
         if resolution <= 0:
             return None
         cm_per_pixel = resolution / 10  # 60mm/px = 6cm/px
-        px = (self.robot_x * 10) / cm_per_pixel - origin_x
-        py = (self.robot_y * 10) / cm_per_pixel - origin_y
+        px = self.robot_x / cm_per_pixel - origin_x
+        py = self.robot_y / cm_per_pixel - origin_y
         return (px, py)
 
     @classmethod
@@ -206,7 +206,7 @@ class MapDisplayData:
 
         result = cls()
 
-        # Robot position — field 1.1 = {1: x_dm, 2: y_dm}, field 1.2 = heading_rad
+        # Robot position — field 1.1 = {1: x_cm, 2: y_cm}, field 1.2 = heading_rad
         field1 = decoded.get("1", {})
         if isinstance(field1, dict):
             pos = field1.get("1", {})
