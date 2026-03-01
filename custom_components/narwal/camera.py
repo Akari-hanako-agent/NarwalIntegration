@@ -6,7 +6,7 @@ import logging
 import time
 
 from homeassistant.components.camera import Camera, CameraEntityFeature
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
@@ -30,13 +30,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Narwal map camera entity."""
     coordinator = entry.runtime_data
-    try:
-        entity = NarwalMapCamera(coordinator)
-        _LOGGER.warning("Camera entity created: unique_id=%s", entity._attr_unique_id)
-        async_add_entities([entity])
-        _LOGGER.warning("Camera entity added successfully")
-    except Exception:
-        _LOGGER.exception("Failed to set up Narwal camera entity")
+    entity = NarwalMapCamera(coordinator)
+    async_add_entities([entity])
 
 
 class NarwalMapCamera(NarwalEntity, Camera):
@@ -65,8 +60,9 @@ class NarwalMapCamera(NarwalEntity, Camera):
         device_id = coordinator.config_entry.data["device_id"]
         self._attr_unique_id = f"{device_id}_map"
         self._cached_image: bytes | None = None
-        self._cache_key: tuple[int, int] = (0, 0)
+        self._cache_key: tuple = ()
         self._last_render_time: float = 0.0
+        self._render_count: int = 0
 
     def camera_image(
         self, width: int | None = None, height: int | None = None,
@@ -78,6 +74,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
         """
         return self._cached_image
 
+    @callback
     def _handle_coordinator_update(self) -> None:
         """Re-render the map when new data arrives from the coordinator."""
         state = self.coordinator.client.state
@@ -92,10 +89,13 @@ class NarwalMapCamera(NarwalEntity, Camera):
             self.async_write_ha_state()
             return
 
-        # Build cache key from both data sources
+        # Build cache key from static map + robot position (not just timestamp,
+        # which may be 0 or constant across broadcasts).
         static_ts = static_map.created_at or 0
-        display_ts = display.timestamp if display else 0
-        new_key = (static_ts, display_ts)
+        if display:
+            new_key = (static_ts, display.robot_x, display.robot_y, display.robot_heading)
+        else:
+            new_key = (static_ts,)
 
         now = time.monotonic()
         since_render = now - self._last_render_time if self._last_render_time else 999
@@ -107,12 +107,21 @@ class NarwalMapCamera(NarwalEntity, Camera):
 
         # Throttle renders during cleaning
         if (
-            display_ts > 0
+            display is not None
             and self._cached_image
             and since_render < _MIN_RENDER_INTERVAL
         ):
             self.async_write_ha_state()
             return
+
+        _LOGGER.warning(
+            "map render #%d: display=%s pos=(%.1f,%.1f) since=%.1fs",
+            self._render_count + 1,
+            display is not None,
+            display.robot_x if display else 0,
+            display.robot_y if display else 0,
+            since_render,
+        )
 
         # Schedule async render (we're in a sync callback)
         self.hass.async_create_task(self._async_render(static_map, display, new_key))
@@ -160,6 +169,14 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 self._cached_image = png_bytes
                 self._cache_key = new_key
                 self._last_render_time = time.monotonic()
+                self._render_count += 1
+                _LOGGER.warning(
+                    "map rendered #%d: %d bytes, robot=(%s,%s)",
+                    self._render_count,
+                    len(png_bytes),
+                    robot_x,
+                    robot_y,
+                )
 
         except Exception:
             _LOGGER.exception("Failed to render map image")
