@@ -361,7 +361,7 @@ class NarwalClient:
             self.state.update_from_download_status(decoded)
         elif short_topic == "map/display_map":
             self.state.map_display_data = MapDisplayData.from_broadcast(decoded)
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "display_map received: robot=(%.2f, %.2f) ts=%d",
                 self.state.map_display_data.robot_x,
                 self.state.map_display_data.robot_y,

@@ -48,12 +48,18 @@ class NarwalMapCamera(NarwalEntity, Camera):
     _attr_frame_interval = _FRAME_INTERVAL
     _attr_content_type = "image/png"
     _attr_name = "Map"
-    _attr_is_streaming = False
 
     @property
     def supported_features(self) -> CameraEntityFeature:
         """Return supported features (none — no streaming or recording)."""
         return CameraEntityFeature(0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, int] | None:
+        """Expose render count so state changes trigger frontend refresh."""
+        if self._render_count > 0:
+            return {"render_count": self._render_count}
+        return None
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
         """Initialize the map camera entity."""
@@ -125,7 +131,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
             self.async_write_ha_state()
             return
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "map render #%d: display=%s pos=(%.1f,%.1f) since=%.1fs",
             self._render_count + 1,
             display is not None,
@@ -181,7 +187,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 self._cache_key = new_key
                 self._last_render_time = time.monotonic()
                 self._render_count += 1
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "map rendered #%d: %d bytes, robot=(%s,%s)",
                     self._render_count,
                     len(png_bytes),
