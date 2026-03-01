@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
-from homeassistant.components.camera import Camera
+from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -52,7 +52,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
     _attr_content_type = "image/png"
     _attr_name = "Map"
     _attr_is_streaming = False
-    _attr_supported_features = 0
+    _attr_supported_features = CameraEntityFeature(0)
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
         """Initialize the map camera entity."""
