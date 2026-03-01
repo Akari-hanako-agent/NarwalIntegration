@@ -42,8 +42,9 @@ proto/
 apk/
 
 # Internal planning and RE documentation
+.planning/
 GSD_PROJECT_PLAN.md
-Project.md
+/Project.md
 REVERSE_ENGINEERING_RESEARCH.md
 
 # Analysis output files
