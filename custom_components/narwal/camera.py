@@ -52,7 +52,11 @@ class NarwalMapCamera(NarwalEntity, Camera):
     _attr_content_type = "image/png"
     _attr_name = "Map"
     _attr_is_streaming = False
-    _attr_supported_features = CameraEntityFeature(0)
+
+    @property
+    def supported_features(self) -> CameraEntityFeature:
+        """Return supported features (none — no streaming or recording)."""
+        return CameraEntityFeature(0)
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
         """Initialize the map camera entity."""
