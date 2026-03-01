@@ -68,7 +68,12 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         state = self.coordinator.data
         if state is None:
             return VacuumActivity.IDLE
-        if state.is_paused:
+        # is_paused (field 3.2) is only meaningful during cleaning — the flag
+        # stays stale after the robot docks, so ignore it for non-cleaning states.
+        is_cleaning_state = state.working_status in (
+            WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
+        )
+        if state.is_paused and is_cleaning_state:
             return VacuumActivity.PAUSED
         # Check returning before cleaning — robot keeps working_status=CLEANING
         # while navigating back to dock (field 3.7=1 indicates returning)
