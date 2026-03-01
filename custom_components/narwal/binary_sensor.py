@@ -23,7 +23,6 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities([
         NarwalDockedSensor(coordinator),
-        NarwalChargingSensor(coordinator),
     ])
 
 
@@ -47,31 +46,3 @@ class NarwalDockedSensor(NarwalEntity, BinarySensorEntity):
         return state.is_docked
 
 
-class NarwalChargingSensor(NarwalEntity, BinarySensorEntity):
-    """Binary sensor: Charging / Not charging, only when docked."""
-
-    _attr_translation_key = "charging"
-    _attr_device_class = BinarySensorDeviceClass.BATTERY_CHARGING
-
-    def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the charging sensor."""
-        super().__init__(coordinator)
-        device_id = coordinator.config_entry.data["device_id"]
-        self._attr_unique_id = f"{device_id}_charging"
-
-    @property
-    def is_on(self) -> bool | None:
-        """Return True if docked and battery not full.
-
-        Returns None (unavailable) when not docked.
-
-        Cannot rely on working_status: DOCKED(10) vs CHARGED(14) doesn't
-        correspond to actual charge state — robot reports CHARGED(14)
-        even at 97%. Use battery_level directly instead.
-        """
-        state = self.coordinator.data
-        if state is None:
-            return None
-        if not state.is_docked:
-            return None
-        return state.battery_level < 100

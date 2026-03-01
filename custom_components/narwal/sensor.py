@@ -77,9 +77,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up Narwal sensor entities."""
     coordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[SensorEntity] = [
         NarwalSensor(coordinator, description) for description in SENSOR_DESCRIPTIONS
-    )
+    ]
+    entities.append(NarwalChargingStateSensor(coordinator))
+    async_add_entities(entities)
 
 
 class NarwalSensor(NarwalEntity, SensorEntity):
@@ -105,3 +107,41 @@ class NarwalSensor(NarwalEntity, SensorEntity):
         if state is None:
             return None
         return self.entity_description.value_fn(state)
+
+
+class NarwalChargingStateSensor(NarwalEntity, SensorEntity):
+    """Sensor showing charging state: Charging, Fully Charged, or unavailable."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_translation_key = "charging_state"
+    _attr_options = ["charging", "fully_charged"]
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        """Initialize the charging state sensor."""
+        super().__init__(coordinator)
+        device_id = coordinator.config_entry.data["device_id"]
+        self._attr_unique_id = f"{device_id}_charging_state"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return charging state.
+
+        Returns None (unavailable) when not docked.
+        """
+        state = self.coordinator.data
+        if state is None:
+            return None
+        if not state.is_docked:
+            return None
+        if state.battery_level >= 100:
+            return "fully_charged"
+        return "charging"
+
+    @property
+    def icon(self) -> str:
+        """Return icon based on charging state."""
+        if self.native_value == "fully_charged":
+            return "mdi:battery"
+        if self.native_value == "charging":
+            return "mdi:battery-charging"
+        return "mdi:battery-unknown"
