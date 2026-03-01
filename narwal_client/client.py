@@ -361,7 +361,7 @@ class NarwalClient:
             self.state.update_from_download_status(decoded)
         elif short_topic == "map/display_map":
             self.state.map_display_data = MapDisplayData.from_broadcast(decoded)
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "display_map received: robot=(%.2f, %.2f) ts=%d",
                 self.state.map_display_data.robot_x,
                 self.state.map_display_data.robot_y,
@@ -428,6 +428,8 @@ class NarwalClient:
         "status/download_status",
         "map/display_map",
         "status/time_line_status",
+        "status/point_navi_plan_traj",
+        "developer/planning_debug_info",
     ]
 
     def _build_topic_subscription(self, duration: int = 600) -> bytes:
@@ -543,6 +545,10 @@ class NarwalClient:
         _LOGGER.warning("Robot did not wake up within %.0fs (%d attempts)", timeout, attempt)
         return False
 
+    # Topic subscription duration (seconds) and renewal interval
+    _TOPIC_SUB_DURATION = 600  # 10 minutes — matches what Narwal app sends
+    _TOPIC_RESUB_INTERVAL = 480  # re-subscribe every 8 min (before 10min expiry)
+
     async def _keepalive_loop(self) -> None:
         """Periodically send wake/heartbeat commands to prevent robot from sleeping.
 
@@ -550,7 +556,12 @@ class NarwalClient:
         command every KEEPALIVE_INTERVAL seconds. If the robot stops
         broadcasting for BROADCAST_STALE_TIMEOUT seconds (goes back to
         sleep), resets _robot_awake and escalates to a full wake burst.
+
+        Also re-subscribes to broadcast topics before the subscription
+        expires (every _TOPIC_RESUB_INTERVAL seconds) so that display_map,
+        robot_base_status, etc. keep flowing during long cleaning sessions.
         """
+        last_resub_time = time.monotonic()
         try:
             while self.connected:
                 await asyncio.sleep(KEEPALIVE_INTERVAL)
@@ -571,6 +582,21 @@ class NarwalClient:
                     self._robot_awake = False
 
                 if self._robot_awake:
+                    # Re-subscribe to topics before the subscription expires
+                    if time.monotonic() - last_resub_time > self._TOPIC_RESUB_INTERVAL:
+                        try:
+                            payload = self._build_topic_subscription(
+                                self._TOPIC_SUB_DURATION
+                            )
+                            frame = build_frame(
+                                self._full_topic(TOPIC_CMD_ACTIVE_ROBOT), payload
+                            )
+                            await self._ws.send(frame)
+                            last_resub_time = time.monotonic()
+                            _LOGGER.debug("Topic subscription renewed")
+                        except Exception:
+                            _LOGGER.debug("Topic re-subscribe failed")
+
                     # Robot is awake — send lightweight heartbeat
                     try:
                         payload = self._encode_varint_field(1, 1)
@@ -584,8 +610,10 @@ class NarwalClient:
                         break
                 else:
                     # Robot appears asleep — send full wake burst
+                    # (wake burst includes topic subscription)
                     _LOGGER.debug("Robot not awake, sending wake burst")
                     await self._send_wake_burst()
+                    last_resub_time = time.monotonic()
 
         except asyncio.CancelledError:
             return
