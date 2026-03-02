@@ -33,6 +33,14 @@
       },
       "firmware_version": {
         "name": "Firmware version"
+      },
+      "charging_state": {
+        "name": "Charging",
+        "state": {
+          "charging": "Charging",
+          "fully_charged": "Fully Charged",
+          "not_charging": "Not Charging"
+        }
       }
     },
     "binary_sensor": {

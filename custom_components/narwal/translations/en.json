@@ -38,7 +38,8 @@
         "name": "Charging",
         "state": {
           "charging": "Charging",
-          "fully_charged": "Fully Charged"
+          "fully_charged": "Fully Charged",
+          "not_charging": "Not Charging"
         }
       }
     },

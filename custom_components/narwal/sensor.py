@@ -114,7 +114,7 @@ class NarwalChargingStateSensor(NarwalEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_translation_key = "charging_state"
-    _attr_options = ["charging", "fully_charged"]
+    _attr_options = ["charging", "fully_charged", "not_charging"]
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
         """Initialize the charging state sensor."""
@@ -132,7 +132,7 @@ class NarwalChargingStateSensor(NarwalEntity, SensorEntity):
         if state is None:
             return None
         if not state.is_docked:
-            return None
+            return "not_charging"
         if state.battery_level >= 100:
             return "fully_charged"
         return "charging"
@@ -144,4 +144,6 @@ class NarwalChargingStateSensor(NarwalEntity, SensorEntity):
             return "mdi:battery"
         if self.native_value == "charging":
             return "mdi:battery-charging"
+        if self.native_value == "not_charging":
+            return "mdi:battery-off-outline"
         return "mdi:battery-unknown"

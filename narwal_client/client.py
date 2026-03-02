@@ -462,6 +462,22 @@ class NarwalClient:
             payload += self._encode_bytes_field(1, inner)
         return payload
 
+    async def subscribe_to_topics(self, duration: int = 600) -> None:
+        """Send topic subscription to the robot.
+
+        This tells the robot to broadcast display_map, working_status, etc.
+        Must be called after connecting, especially if the robot is already
+        awake (wake() skips the burst when robot_awake is True).
+        """
+        if not self.connected or not self._ws:
+            return
+        payload = self._build_topic_subscription(duration)
+        frame = build_frame(
+            self._full_topic(TOPIC_CMD_ACTIVE_ROBOT), payload
+        )
+        await self._ws.send(frame)
+        _LOGGER.info("Topic subscription sent (duration=%ds)", duration)
+
     def _build_wake_commands(self) -> list[tuple[str, bytes]]:
         """Build the sequence of wake commands to try.
 

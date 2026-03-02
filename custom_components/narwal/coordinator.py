@@ -76,6 +76,13 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         # Quick wake attempt (5s, not 20s — keep setup fast)
         await self.client.wake(timeout=5.0)
 
+        # Always send topic subscription — wake() skips the burst if
+        # the robot is already awake, which means display_map won't flow.
+        try:
+            await self.client.subscribe_to_topics()
+        except Exception:
+            _LOGGER.debug("Could not send initial topic subscription")
+
         # Single attempt at fetching initial state
         try:
             await self.client.get_device_info()
