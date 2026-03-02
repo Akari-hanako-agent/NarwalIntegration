@@ -20,6 +20,7 @@ from .const import (
     DISPLAY_MAP_RECOVERY_COOLDOWN,
     HEARTBEAT_INTERVAL,
     KEEPALIVE_INTERVAL,
+    KNOWN_PRODUCT_KEYS,
     RECONNECT_BACKOFF_FACTOR,
     RECONNECT_INITIAL_DELAY,
     RECONNECT_MAX_DELAY,
@@ -168,21 +169,32 @@ class NarwalClient:
         if not self.connected:
             raise NarwalConnectionError("Not connected to vacuum")
 
-        # Build wake frames with multiple topic prefixes to support all models.
-        # The local WebSocket server may only accept commands with the correct
-        # product key prefix. Since we don't know the model yet, try the default
-        # prefix first, then a bare topic with no prefix.
+        # Build wake frames using all known product key prefixes.
+        # The robot only responds to commands with its correct product key
+        # in the topic. Since we don't know the model yet, try all known
+        # keys until one provokes a response.
         cmd = TOPIC_CMD_GET_DEVICE_INFO
         wake_frames = [
-            build_frame(self._full_topic(cmd), b""),  # default prefix
-            build_frame(f"//{cmd}", b""),  # no prefix, no device_id
+            build_frame(self._full_topic(cmd), b""),  # current prefix (default or user-set)
+            build_frame(f"//{cmd}", b""),  # bare topic, no prefix
         ]
-        for frame in wake_frames:
+        # Add frames for all known product keys (skip default, already included)
+        for key in KNOWN_PRODUCT_KEYS:
+            if key != self.topic_prefix.lstrip("/"):
+                wake_frames.append(
+                    build_frame(f"/{key}/{self.device_id}/{cmd}", b"")
+                )
+        # Send first batch (default + bare + first few known keys)
+        batch_size = min(5, len(wake_frames))
+        for frame in wake_frames[:batch_size]:
             try:
                 await self._ws.send(frame)
             except Exception as e:
                 _LOGGER.warning("Failed to send wake command: %s", e)
-        _LOGGER.debug("Sent discovery wake commands (device_id='%s')", self.device_id)
+        _LOGGER.debug(
+            "Sent discovery wake commands (%d prefixes, device_id='%s')",
+            batch_size, self.device_id,
+        )
 
         wake_index = 0  # cycle through wake frames on retry
         deadline = asyncio.get_event_loop().time() + timeout

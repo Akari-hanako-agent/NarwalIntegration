@@ -16,6 +16,28 @@ TOPIC_DATA_OFFSET = 4
 # the actual product_key for the connected device.
 DEFAULT_TOPIC_PREFIX = "/QoEsI5qYXO"
 
+# Known product keys for multi-model discovery.
+# During wake/discovery, the client cycles through these prefixes until
+# the robot responds. Once it does, the correct prefix is locked in.
+# Order: confirmed working models first, then unverified keys.
+KNOWN_PRODUCT_KEYS = [
+    "QoEsI5qYXO",  # AX12 — Narwal Flow (primary, confirmed)
+    "DrzDKQ0MU8",   # CX4  — Freo Z10 Ultra (confirmed by @irekkl-maker)
+    "CNbforyZWI",   # AX15
+    "E9Q8aDzUbp",   # AX17
+    "LnugwMG9ss",   # AX18 — Freo X Ultra?
+    "5OMbqk58Sc",   # AX19 — Freo X Ultra?
+    "jI5rHi4mKa",   # AX24
+    "UuTSLsMce4",   # AX25
+    "qV6BujoYLz",   # AX26
+    "88OLXLpkjT",   # BX4
+    "7sSZZ4XfTI",   # CX2
+    "OlkUn3oUCu",   # CX3
+    "BYWBPqSxeC",   # CX7
+    "mvlduyye85",   # X30
+    "pcbfh2ldvx",   # X31
+]
+
 # --- Status topics (robot → client, field 4 / 0x22 frames) ---
 TOPIC_WORKING_STATUS = "status/working_status"
 TOPIC_ROBOT_BASE_STATUS = "status/robot_base_status"
