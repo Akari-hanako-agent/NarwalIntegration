@@ -1,4 +1,4 @@
-"""Map camera entity for Narwal vacuum."""
+"""Map image entity for Narwal vacuum."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ import io
 import logging
 import math
 import time
+from datetime import UTC, datetime
 
-from aiohttp import web
-
-from homeassistant.components.camera import Camera, CameraEntityFeature, async_get_still_stream
+from homeassistant.components.image import ImageEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -19,9 +18,6 @@ from .entity import NarwalEntity
 from .narwal_client.const import WorkingStatus
 
 _LOGGER = logging.getLogger(__name__)
-
-# Seconds between MJPEG frames served to the frontend.
-_FRAME_INTERVAL = 2.0
 
 # Minimum seconds between re-renders (display_map arrives every ~1.5s
 # but PIL rendering is CPU-bound — no need to render every broadcast).
@@ -40,41 +36,29 @@ async def async_setup_entry(
     entry: NarwalConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Narwal map camera entity."""
+    """Set up the Narwal map image entity."""
     coordinator = entry.runtime_data
-    entity = NarwalMapCamera(coordinator)
+    entity = NarwalMapImage(hass, coordinator)
     async_add_entities([entity])
 
 
-class NarwalMapCamera(NarwalEntity, Camera):
-    """Camera entity that displays the vacuum's map as a PNG via MJPEG stream."""
+class NarwalMapImage(NarwalEntity, ImageEntity):
+    """Image entity that displays the vacuum's map as a PNG."""
 
-    _attr_frame_interval = _FRAME_INTERVAL
     _attr_content_type = "image/png"
     _attr_name = "Map"
 
-    @property
-    def supported_features(self) -> CameraEntityFeature:
-        """Return supported features (none — no streaming or recording)."""
-        return CameraEntityFeature(0)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, int] | None:
-        """Expose render count so state changes trigger frontend refresh."""
-        if self._render_count > 0:
-            return {"render_count": self._render_count}
-        return None
-
-    def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the map camera entity."""
-        super().__init__(coordinator)
-        Camera.__init__(self)
+    def __init__(self, hass: HomeAssistant, coordinator: NarwalCoordinator) -> None:
+        """Initialize the map image entity."""
+        NarwalEntity.__init__(self, coordinator)
+        ImageEntity.__init__(self, hass)
         device_id = coordinator.config_entry.data["device_id"]
         self._attr_unique_id = f"{device_id}_map"
         self._cached_image: bytes | None = None
         self._cache_key: tuple = ()
         self._last_render_time: float = 0.0
         self._render_count: int = 0
+        self._image_last_updated: datetime | None = None
         # Debug view state — full session trail with growing viewport
         self._trail: list[tuple[float, float]] = []
         self._dock_pos: tuple[float, float] | None = None
@@ -86,20 +70,18 @@ class NarwalMapCamera(NarwalEntity, Camera):
         self._last_trail_record: float = 0.0  # monotonic time of last trail append
         self._last_cleaning_status: WorkingStatus = WorkingStatus.UNKNOWN
 
-    def camera_image(
-        self, width: int | None = None, height: int | None = None,
-    ) -> bytes | None:
+    @property
+    def image_last_updated(self) -> datetime | None:
+        """Return the time the image was last updated.
+
+        HA uses this to decide when to serve a fresh image. We update it
+        every time we successfully render a new PNG.
+        """
+        return self._image_last_updated
+
+    async def async_image(self) -> bytes | None:
         """Return the current map as a PNG image."""
         return self._cached_image
-
-    async def handle_async_mjpeg_stream(
-        self, request: web.Request,
-    ) -> web.StreamResponse | None:
-        """Serve an MJPEG stream by polling cached map frames."""
-        return await async_get_still_stream(
-            request, self.async_camera_image,
-            self._attr_content_type, self._attr_frame_interval,
-        )
 
     def _reset_debug_trail(self) -> None:
         """Clear trail and viewport for a new cleaning session."""
@@ -155,7 +137,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
         display = state.map_display_data
 
         _LOGGER.debug(
-            "camera update: debug=%s, display=%s, robot=(%.2f, %.2f), cached=%s",
+            "image update: debug=%s, display=%s, robot=(%.2f, %.2f), cached=%s",
             _DEBUG_VIEW,
             display is not None,
             display.robot_x if display else 0,
@@ -243,6 +225,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                     self._cache_key = new_key
                     self._last_render_time = time.monotonic()
                     self._render_count += 1
+                    self._image_last_updated = datetime.now(UTC)
                     _LOGGER.debug(
                         "debug rendered #%d: raw=(%.1f,%.1f) trail=%d vp=%s",
                         self._render_count,
@@ -302,6 +285,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 self._cache_key = new_key
                 self._last_render_time = time.monotonic()
                 self._render_count += 1
+                self._image_last_updated = datetime.now(UTC)
 
         except Exception:
             _LOGGER.exception("Failed to render map image")
