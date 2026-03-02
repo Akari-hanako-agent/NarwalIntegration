@@ -25,7 +25,7 @@ _MIN_RENDER_INTERVAL = 2
 
 # Debug view: blank canvas with robot dot + trail.
 # Set to False to use the real map renderer instead.
-_DEBUG_VIEW = True
+_DEBUG_VIEW = False
 _DEBUG_CANVAS_SIZE = 600  # pixels
 _DEBUG_TRAIL_MAX = 50000  # positions — full cleaning session worth
 _DEBUG_RECORD_INTERVAL = 5  # seconds between trail point recordings
