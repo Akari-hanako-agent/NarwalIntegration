@@ -97,8 +97,16 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """
         return self._last_fan_speed
 
+    async def _ensure_awake(self) -> None:
+        """Wake the robot before sending a command."""
+        client = self.coordinator.client
+        if not client.robot_awake:
+            _LOGGER.debug("Robot asleep — waking before command")
+            await client.wake(timeout=10.0)
+
     async def async_start(self) -> None:
         """Start or resume cleaning."""
+        await self._ensure_awake()
         state = self.coordinator.data
         if state and state.is_paused:
             await self.coordinator.client.resume()
@@ -107,6 +115,7 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
 
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""
+        await self._ensure_awake()
         await self.coordinator.client.stop()
 
     async def async_pause(self) -> None:
@@ -119,6 +128,7 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
 
     async def async_locate(self, **kwargs) -> None:
         """Locate the vacuum — robot says 'Robot is here'."""
+        await self._ensure_awake()
         await self.coordinator.client.locate()
 
     async def async_set_fan_speed(self, fan_speed: str, **kwargs) -> None:
