@@ -176,14 +176,25 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             )
 
     async def _fetch_missing_map(self) -> None:
-        """Fetch static map when it's missing (get_map failed at startup)."""
+        """Fetch static map when it's missing (get_map failed at startup).
+
+        Also re-subscribes to topics since subscription likely also failed
+        when the robot was asleep at startup.
+        """
         try:
             await self.client.get_map()
             _LOGGER.info("Static map loaded (was missing at startup)")
-            self.async_set_updated_data(self.client.state)
         except Exception:
             _LOGGER.debug("Map fetch failed — will retry on next broadcast")
             self._map_fetch_pending = False
+            return
+        # Re-subscribe to topics (display_map won't flow without subscription)
+        try:
+            await self.client.subscribe_to_topics()
+            _LOGGER.info("Topic subscription sent after map load")
+        except Exception:
+            _LOGGER.debug("Topic subscription failed after map load")
+        self.async_set_updated_data(self.client.state)
 
     async def _refresh_dock_status(self) -> None:
         """Immediate get_status() after return-to-dock to refresh dock fields."""
