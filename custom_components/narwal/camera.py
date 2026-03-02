@@ -343,10 +343,10 @@ def _render_debug_view(
         min_y = robot_y - 250
         max_y = robot_y + 250
 
-    # Padding and minimum range (500cm = 5m)
-    padding = 300  # cm — generous so trail never touches edges
-    range_x = max(max_x - min_x, 500) + padding * 2
-    range_y = max(max_y - min_y, 500) + padding * 2
+    # Padding and minimum range (200cm = 2m)
+    padding = 100  # cm
+    range_x = max(max_x - min_x, 200) + padding * 2
+    range_y = max(max_y - min_y, 200) + padding * 2
     center_x = (min_x + max_x) / 2
     center_y = (min_y + max_y) / 2
 
