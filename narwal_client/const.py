@@ -111,7 +111,7 @@ COMMAND_RESPONSE_TIMEOUT = 5.0  # seconds
 # arrives for this long, escalate to a full wake burst to recover the
 # topic subscription (which can die during CLEANING_ALT / stuck episodes)
 DISPLAY_MAP_DROPOUT_TIMEOUT = 30.0  # seconds
-DISPLAY_MAP_RECOVERY_COOLDOWN = 120.0  # don't retry recovery more than once per 2 min
+DISPLAY_MAP_RECOVERY_COOLDOWN = 45.0  # retry recovery every 45s if dropout persists
 
 # Status broadcast interval
 STATUS_BROADCAST_INTERVAL = 1.5  # seconds (when robot is awake)
