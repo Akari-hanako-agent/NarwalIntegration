@@ -197,6 +197,14 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         except Exception as err:
             raise UpdateFailed(f"Failed to get status: {err}") from err
 
+        # Retry map fetch if it failed during setup (robot was asleep)
+        if self.client.state.map_data is None:
+            try:
+                await self.client.get_map()
+                _LOGGER.info("Map data loaded on poll retry")
+            except Exception:
+                _LOGGER.debug("Map fetch retry failed — will try again next poll")
+
         state = self.client.state
 
         _LOGGER.debug(
