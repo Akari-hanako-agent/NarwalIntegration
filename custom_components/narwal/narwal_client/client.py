@@ -536,7 +536,9 @@ class NarwalClient:
         """Attempt to wake the robot from sleep.
 
         Sends a burst of wake commands and waits for the robot to start
-        broadcasting status messages. Returns True if robot woke up.
+        broadcasting status messages. If the first burst fails, escalates
+        by closing and reopening the WebSocket connection — a fresh
+        connection may trigger the robot's wake interrupt in deep sleep.
 
         Args:
             timeout: Maximum seconds to wait for the robot to respond.
@@ -554,6 +556,7 @@ class NarwalClient:
 
         deadline = asyncio.get_event_loop().time() + timeout
         attempt = 0
+        reconnected = False
 
         while asyncio.get_event_loop().time() < deadline:
             attempt += 1
@@ -572,12 +575,37 @@ class NarwalClient:
                     return True
                 await asyncio.sleep(0.3)
 
+            # Escalation: after 2 failed attempts, try a fresh connection.
+            # The robot's WebSocket server may need a new TCP connection to
+            # trigger its wake handler during deep sleep.
+            if attempt >= 2 and not reconnected and not self._listener_active:
+                _LOGGER.info(
+                    "Wake burst not working — reconnecting WebSocket "
+                    "to trigger deep sleep wake"
+                )
+                try:
+                    if self._ws:
+                        await self._ws.close()
+                        self._ws = None
+                        self._connected.clear()
+                    await asyncio.sleep(0.5)
+                    await self.connect()
+                    reconnected = True
+                except Exception:
+                    _LOGGER.warning("Reconnect during wake failed")
+                    break
+
         _LOGGER.warning("Robot did not wake up within %.0fs (%d attempts)", timeout, attempt)
         return False
 
     # Topic subscription duration (seconds) and renewal interval
     _TOPIC_SUB_DURATION = 600  # 10 minutes — matches what Narwal app sends
     _TOPIC_RESUB_INTERVAL = 480  # re-subscribe every 8 min (before 10min expiry)
+
+    # After this many consecutive wake bursts without response (~60s),
+    # force a WebSocket reconnect to try triggering the robot's deep sleep
+    # wake handler via a fresh TCP connection.
+    _WAKE_RECONNECT_THRESHOLD = 4
 
     async def _keepalive_loop(self) -> None:
         """Periodically send wake/heartbeat commands to prevent robot from sleeping.
@@ -590,11 +618,15 @@ class NarwalClient:
         Also re-subscribes to broadcast topics before the subscription
         expires (every _TOPIC_RESUB_INTERVAL seconds) so that display_map,
         robot_base_status, etc. keep flowing during long cleaning sessions.
+
+        If wake bursts fail repeatedly, forces a WebSocket reconnect by
+        closing the connection (the listener loop handles reconnection).
         """
         # Start at 0 so the first keepalive tick sends the subscription
         # immediately. This handles the case where the robot is already
         # broadcasting (e.g. mid-cleaning) and wake() skips the burst.
         last_resub_time = 0.0
+        consecutive_wake_failures = 0
         try:
             while self.connected:
                 await asyncio.sleep(KEEPALIVE_INTERVAL)
@@ -613,8 +645,10 @@ class NarwalClient:
                         time.monotonic() - self._last_broadcast_time,
                     )
                     self._robot_awake = False
+                    consecutive_wake_failures = 0
 
                 if self._robot_awake:
+                    consecutive_wake_failures = 0
                     # Detect display_map dropout during cleaning.
                     # If the robot is cleaning but display_map stopped arriving
                     # (e.g. after CLEANING_ALT/stuck), the regular topic resub
@@ -668,9 +702,29 @@ class NarwalClient:
                 else:
                     # Robot appears asleep — send full wake burst
                     # (wake burst includes topic subscription)
-                    _LOGGER.debug("Robot not awake, sending wake burst")
+                    consecutive_wake_failures += 1
+                    _LOGGER.debug(
+                        "Robot not awake, sending wake burst "
+                        "(attempt %d/%d before reconnect)",
+                        consecutive_wake_failures,
+                        self._WAKE_RECONNECT_THRESHOLD,
+                    )
                     await self._send_wake_burst()
                     last_resub_time = time.monotonic()
+
+                    # Escalation: after repeated failures, force a fresh
+                    # WebSocket connection. Close the socket — the listener
+                    # loop's reconnect logic will establish a new connection.
+                    if consecutive_wake_failures >= self._WAKE_RECONNECT_THRESHOLD:
+                        _LOGGER.warning(
+                            "Wake burst failed %d times — forcing WebSocket "
+                            "reconnect to trigger deep sleep wake",
+                            consecutive_wake_failures,
+                        )
+                        consecutive_wake_failures = 0
+                        if self._ws:
+                            await self._ws.close()
+                        break  # exit keepalive; listener reconnects
 
         except asyncio.CancelledError:
             return
