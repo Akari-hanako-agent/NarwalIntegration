@@ -130,6 +130,13 @@ class NarwalClient:
         """Return True if the robot is actively broadcasting."""
         return self._robot_awake
 
+    @property
+    def last_broadcast_age(self) -> float:
+        """Seconds since last broadcast (0.0 if none received yet)."""
+        if self._last_broadcast_time <= 0:
+            return 0.0
+        return time.monotonic() - self._last_broadcast_time
+
     async def connect(self) -> None:
         """Establish WebSocket connection to the vacuum.
 
@@ -881,9 +888,9 @@ class NarwalClient:
         """Trigger locate sound — robot says 'Robot is here'."""
         return await self.send_command(TOPIC_CMD_YELL)
 
-    async def start(self) -> CommandResponse:
+    async def start(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
         """Start cleaning."""
-        return await self.send_command(TOPIC_CMD_START_CLEAN)
+        return await self.send_command(TOPIC_CMD_START_CLEAN, timeout=timeout)
 
     async def start_easy_clean(self) -> CommandResponse:
         """Start quick/easy clean."""
@@ -897,17 +904,17 @@ class NarwalClient:
         """Resume paused task."""
         return await self.send_command(TOPIC_CMD_RESUME)
 
-    async def stop(self) -> CommandResponse:
+    async def stop(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
         """Force-stop current task."""
-        return await self.send_command(TOPIC_CMD_FORCE_END)
+        return await self.send_command(TOPIC_CMD_FORCE_END, timeout=timeout)
 
     async def cancel(self) -> CommandResponse:
         """Cancel current task."""
         return await self.send_command(TOPIC_CMD_CANCEL)
 
-    async def return_to_base(self) -> CommandResponse:
+    async def return_to_base(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
         """Return to charging dock."""
-        return await self.send_command(TOPIC_CMD_RECALL)
+        return await self.send_command(TOPIC_CMD_RECALL, timeout=timeout)
 
     async def set_fan_speed(self, level: FanLevel | int) -> CommandResponse:
         """Set suction fan speed.

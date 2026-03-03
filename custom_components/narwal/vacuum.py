@@ -97,12 +97,32 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """
         return self._last_fan_speed
 
+    # Timeout for action commands (start/stop/return) — robot may need
+    # time to load map, plan route, etc., especially after waking.
+    _ACTION_TIMEOUT = 10.0
+
+    # If no broadcast in this many seconds, treat robot as shallow-sleeping
+    # even if robot_awake is True (one stale broadcast doesn't mean "ready").
+    _BROADCAST_STALE_FOR_CMD = 10.0
+
     async def _ensure_awake(self) -> None:
-        """Wake the robot before sending a command."""
+        """Wake the robot before sending a command.
+
+        Checks both the robot_awake flag AND broadcast recency.  The robot
+        can appear awake (one broadcast received) but drop back to shallow
+        sleep within seconds — in that state it won't process commands.
+        """
         client = self.coordinator.client
-        if not client.robot_awake:
-            _LOGGER.debug("Robot asleep — waking before command")
-            await client.wake(timeout=10.0)
+        broadcast_age = client.last_broadcast_age
+        if not client.robot_awake or (
+            broadcast_age > self._BROADCAST_STALE_FOR_CMD
+        ):
+            _LOGGER.debug(
+                "Robot not ready (awake=%s, last_broadcast=%.1fs ago) — waking",
+                client.robot_awake,
+                broadcast_age,
+            )
+            await client.wake(timeout=15.0)
 
     async def async_start(self) -> None:
         """Start or resume cleaning."""
@@ -111,12 +131,12 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         if state and state.is_paused:
             await self.coordinator.client.resume()
         else:
-            await self.coordinator.client.start()
+            await self.coordinator.client.start(timeout=self._ACTION_TIMEOUT)
 
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""
         await self._ensure_awake()
-        await self.coordinator.client.stop()
+        await self.coordinator.client.stop(timeout=self._ACTION_TIMEOUT)
 
     async def async_pause(self) -> None:
         """Pause cleaning."""
@@ -124,7 +144,8 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
 
     async def async_return_to_base(self, **kwargs) -> None:
         """Return to the dock."""
-        await self.coordinator.client.return_to_base()
+        await self._ensure_awake()
+        await self.coordinator.client.return_to_base(timeout=self._ACTION_TIMEOUT)
 
     async def async_locate(self, **kwargs) -> None:
         """Locate the vacuum — robot says 'Robot is here'."""
