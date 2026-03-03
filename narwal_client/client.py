@@ -113,6 +113,8 @@ class NarwalClient:
         self._last_display_map_recovery: float = 0.0  # last recovery attempt
         # Queue for field5 command responses
         self._response_queue: asyncio.Queue[NarwalMessage] = asyncio.Queue()
+        # Lock to prevent concurrent send_command calls from racing on the queue
+        self._command_lock = asyncio.Lock()
 
     def _full_topic(self, short_topic: str) -> str:
         """Build the full topic path."""
@@ -481,9 +483,11 @@ class NarwalClient:
     def _build_wake_commands(self) -> list[tuple[str, bytes]]:
         """Build the sequence of wake commands to try.
 
-        Returns list of (short_topic, payload) tuples. Mimics what the
-        Narwal app sends when opened: notify_app_event → subscribe to all
-        broadcast topics → heartbeat → status query.
+        Returns list of (short_topic, payload) tuples. Only includes
+        fire-and-forget commands that do NOT generate field5 responses.
+        Query commands (get_base_status, get_device_info, ping) are
+        excluded because their field5 responses pollute the command
+        response queue and can cause user commands to time out.
         """
         cmds: list[tuple[str, bytes]] = []
 
@@ -498,16 +502,6 @@ class NarwalClient:
 
         # 4. app heartbeat — field 1 = 1
         cmds.append((TOPIC_CMD_APP_HEARTBEAT, self._encode_varint_field(1, 1)))
-
-        # 5. get_device_base_status — forces robot to process a command,
-        #    response updates battery; may also trigger broadcast as side effect
-        cmds.append((TOPIC_CMD_GET_BASE_STATUS, b""))
-
-        # 6. get_device_info — lightweight command that always gets a response
-        cmds.append((TOPIC_CMD_GET_DEVICE_INFO, b""))
-
-        # 7. developer ping
-        cmds.append((TOPIC_CMD_PING, b""))
 
         return cmds
 
@@ -741,9 +735,8 @@ class NarwalClient:
     ) -> CommandResponse:
         """Send a command and wait for the field5 response.
 
-        Works both with and without start_listening() running. When the
-        listener loop is active, responses arrive via the queue. Otherwise,
-        this method directly reads from the WebSocket.
+        Uses a lock to prevent concurrent commands from racing on the
+        response queue. Works both with and without start_listening().
 
         Args:
             short_topic: Command topic without prefix/device_id.
@@ -760,31 +753,36 @@ class NarwalClient:
         if not self.connected:
             raise NarwalConnectionError("Not connected to vacuum")
 
-        # Drain any stale responses
-        while not self._response_queue.empty():
-            try:
-                self._response_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        async with self._command_lock:
+            # Drain any stale responses (e.g. from fire-and-forget wake burst)
+            drained = 0
+            while not self._response_queue.empty():
+                try:
+                    self._response_queue.get_nowait()
+                    drained += 1
+                except asyncio.QueueEmpty:
+                    break
+            if drained:
+                _LOGGER.debug("Drained %d stale field5 responses", drained)
 
-        full_topic = self._full_topic(short_topic)
-        frame = build_frame(full_topic, payload)
-        await self._ws.send(frame)
-        _LOGGER.debug("Sent command: %s (%d bytes)", short_topic, len(frame))
+            full_topic = self._full_topic(short_topic)
+            frame = build_frame(full_topic, payload)
+            await self._ws.send(frame)
+            _LOGGER.debug("Sent command: %s (%d bytes)", short_topic, len(frame))
 
-        # If listener is running, wait on the queue (avoid concurrent recv)
-        if self._listener_active:
-            try:
-                msg = await asyncio.wait_for(
-                    self._response_queue.get(), timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                raise NarwalCommandError(
-                    f"No response for command '{short_topic}' within {timeout}s"
-                ) from None
-        else:
-            # No listener — read directly from websocket
-            msg = await self._wait_for_field5_response(timeout)
+            # If listener is running, wait on the queue (avoid concurrent recv)
+            if self._listener_active:
+                try:
+                    msg = await asyncio.wait_for(
+                        self._response_queue.get(), timeout=timeout
+                    )
+                except asyncio.TimeoutError:
+                    raise NarwalCommandError(
+                        f"No response for command '{short_topic}' within {timeout}s"
+                    ) from None
+            else:
+                # No listener — read directly from websocket
+                msg = await self._wait_for_field5_response(timeout)
 
         # Decode response
         try:
