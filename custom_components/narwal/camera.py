@@ -1,4 +1,4 @@
-"""Map image entity for Narwal vacuum."""
+"""Map camera entity for Narwal vacuum — MJPEG streaming for live updates."""
 
 from __future__ import annotations
 
@@ -6,9 +6,8 @@ import io
 import logging
 import math
 import time
-from datetime import UTC, datetime
 
-from homeassistant.components.image import ImageEntity
+from homeassistant.components.camera import Camera
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -36,29 +35,28 @@ async def async_setup_entry(
     entry: NarwalConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Narwal map image entity."""
+    """Set up the Narwal map camera entity."""
     coordinator = entry.runtime_data
-    entity = NarwalMapImage(hass, coordinator)
+    entity = NarwalMapCamera(coordinator)
     async_add_entities([entity])
 
 
-class NarwalMapImage(NarwalEntity, ImageEntity):
-    """Image entity that displays the vacuum's map as a PNG."""
+class NarwalMapCamera(NarwalEntity, Camera):
+    """Camera entity that streams the vacuum's map as MJPEG."""
 
-    _attr_content_type = "image/png"
     _attr_name = "Map"
+    _attr_is_streaming = True
 
-    def __init__(self, hass: HomeAssistant, coordinator: NarwalCoordinator) -> None:
-        """Initialize the map image entity."""
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        """Initialize the map camera entity."""
         NarwalEntity.__init__(self, coordinator)
-        ImageEntity.__init__(self, hass)
+        Camera.__init__(self)
         device_id = coordinator.config_entry.data["device_id"]
         self._attr_unique_id = f"{device_id}_map"
         self._cached_image: bytes | None = None
         self._cache_key: tuple = ()
         self._last_render_time: float = 0.0
         self._render_count: int = 0
-        self._image_last_updated: datetime | None = None
         # Debug view state — full session trail with growing viewport
         self._trail: list[tuple[float, float]] = []
         self._dock_pos: tuple[float, float] | None = None
@@ -70,18 +68,24 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
         self._last_trail_record: float = 0.0  # monotonic time of last trail append
         self._last_cleaning_status: WorkingStatus = WorkingStatus.UNKNOWN
 
-    @property
-    def image_last_updated(self) -> datetime | None:
-        """Return the time the image was last updated.
-
-        HA uses this to decide when to serve a fresh image. We update it
-        every time we successfully render a new PNG.
-        """
-        return self._image_last_updated
-
-    async def async_image(self) -> bytes | None:
-        """Return the current map as a PNG image."""
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None,
+    ) -> bytes | None:
+        """Return the latest map image as PNG (for snapshot/polling clients)."""
         return self._cached_image
+
+    async def handle_async_mjpeg_stream(self, request):
+        """Stream map as MJPEG using HA's built-in still-image streamer."""
+        from homeassistant.components.camera import async_get_still_stream
+
+        return await async_get_still_stream(
+            request, self.async_camera_image, "image/png", _MIN_RENDER_INTERVAL,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int]:
+        """Expose render count so HA detects state changes for MJPEG refresh."""
+        return {"render_count": self._render_count}
 
     def _reset_debug_trail(self) -> None:
         """Clear trail and viewport for a new cleaning session."""
@@ -91,17 +95,9 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
         self._last_trail_record = 0.0
 
     def _record_debug_position(self, x: float, y: float) -> None:
-        """Record a position and expand viewport bounds.
-
-        Called on every display_map update, regardless of whether we render.
-        Throttled to one trail point per _DEBUG_RECORD_INTERVAL seconds —
-        the robot moves slowly enough that 5s intervals capture the full path.
-        The first position is always recorded immediately (dock marker).
-        Viewport bounds expand on every call (even when trail point is skipped).
-        """
+        """Record a position and expand viewport bounds."""
         now = time.monotonic()
 
-        # First position = dock/start marker — always record immediately
         if self._dock_pos is None:
             self._dock_pos = (x, y)
             self._trail.append((x, y))
@@ -113,7 +109,6 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
             self._trail.append((x, y))
             self._last_trail_record = now
 
-        # Expand viewport on EVERY update (not just recorded points)
         if not self._vp_initialized:
             self._vp_min_x = x
             self._vp_max_x = x
@@ -137,7 +132,7 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
         display = state.map_display_data
 
         _LOGGER.debug(
-            "image update: debug=%s, display=%s, robot=(%.2f, %.2f), cached=%s",
+            "camera update: debug=%s, display=%s, robot=(%.2f, %.2f), cached=%s",
             _DEBUG_VIEW,
             display is not None,
             display.robot_x if display else 0,
@@ -146,7 +141,6 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
         )
 
         if _DEBUG_VIEW:
-            # Detect new cleaning session — clear trail for fresh tracking
             current_status = state.working_status
             if (
                 current_status
@@ -163,12 +157,10 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
             if current_status != WorkingStatus.UNKNOWN:
                 self._last_cleaning_status = current_status
 
-            # Skip if no display data or robot at origin
             if not display or (display.robot_x == 0.0 and display.robot_y == 0.0):
                 self.async_write_ha_state()
                 return
 
-            # Always record position BEFORE throttle check — never lose trail points
             self._record_debug_position(display.robot_x, display.robot_y)
 
             new_key = (display.robot_x, display.robot_y, display.robot_heading)
@@ -225,7 +217,6 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
                     self._cache_key = new_key
                     self._last_render_time = time.monotonic()
                     self._render_count += 1
-                    self._image_last_updated = datetime.now(UTC)
                     _LOGGER.debug(
                         "debug rendered #%d: raw=(%.1f,%.1f) trail=%d vp=%s",
                         self._render_count,
@@ -285,7 +276,7 @@ class NarwalMapImage(NarwalEntity, ImageEntity):
                 self._cache_key = new_key
                 self._last_render_time = time.monotonic()
                 self._render_count += 1
-                self._image_last_updated = datetime.now(UTC)
+                self._image_event.set()
 
         except Exception:
             _LOGGER.exception("Failed to render map image")
@@ -301,19 +292,13 @@ def _render_debug_view(
     dock_pos: tuple[float, float] | None = None,
     viewport: tuple[float, float, float, float] | None = None,
 ) -> bytes:
-    """Render a blank canvas with full cleaning trail, dock marker, and robot dot.
-
-    The viewport only grows (never shrinks) so the view is stable as the robot
-    explores. Trail is drawn as connected line segments for a clean path.
-    Long trails are downsampled for rendering performance.
-    """
+    """Render a blank canvas with full cleaning trail, dock marker, and robot dot."""
     from PIL import Image, ImageDraw, ImageFont
 
     size = _DEBUG_CANVAS_SIZE
     img = Image.new("RGB", (size, size), (20, 20, 30))
     draw = ImageDraw.Draw(img)
 
-    # Determine viewport from growing bounds
     if viewport:
         min_x, min_y, max_x, max_y = viewport
     elif trail:
@@ -327,25 +312,22 @@ def _render_debug_view(
         min_y = robot_y - 250
         max_y = robot_y + 250
 
-    # Padding and minimum range (200cm = 2m)
-    padding = 100  # cm
+    padding = 100
     range_x = max(max_x - min_x, 200) + padding * 2
     range_y = max(max_y - min_y, 200) + padding * 2
     center_x = (min_x + max_x) / 2
     center_y = (min_y + max_y) / 2
 
-    # Uniform scale with margin for text
-    margin = 50  # px reserved for text overlay
+    margin = 50
     usable = size - margin * 2
     scale = usable / max(range_x, range_y)
 
     def to_px(cx: float, cy: float) -> tuple[int, int]:
         px = int((cx - center_x) * scale + size / 2)
-        py = int(-(cy - center_y) * scale + size / 2)  # flip Y
+        py = int(-(cy - center_y) * scale + size / 2)
         return px, py
 
-    # Draw grid lines at 100cm (1m) intervals
-    grid_interval = 100  # cm
+    grid_interval = 100
     grid_start_x = int(center_x - range_x / 2)
     grid_start_x = grid_start_x - (grid_start_x % grid_interval)
     grid_start_y = int(center_y - range_y / 2)
@@ -361,12 +343,9 @@ def _render_debug_view(
         if 0 <= py < size:
             draw.line([(0, py), (size, py)], fill=grid_color)
 
-    # Draw trail as connected line segments
-    # Downsample for rendering if trail is very long (>3000 points)
     if trail:
         n = len(trail)
         if n > 3000:
-            # Keep every Nth point for the bulk, plus all of the last 200
             step = max(n // 2000, 2)
             bulk = trail[: n - 200 : step]
             recent = trail[n - 200 :]
@@ -374,20 +353,16 @@ def _render_debug_view(
         else:
             render_trail = trail
 
-        # Draw path lines — dim blue for old, bright blue for recent
         recent_start = max(len(render_trail) - 200, 0)
         for i in range(len(render_trail) - 1):
             if i >= recent_start:
-                # Recent: bright blue
                 color = (30, 120, 255)
             else:
-                # Older: dim blue
                 color = (15, 60, 130)
             x1, y1 = to_px(render_trail[i][0], render_trail[i][1])
             x2, y2 = to_px(render_trail[i + 1][0], render_trail[i + 1][1])
             draw.line([(x1, y1), (x2, y2)], fill=color, width=2)
 
-    # Draw dock/start marker (orange)
     try:
         font = ImageFont.load_default()
     except Exception:
@@ -403,7 +378,6 @@ def _render_debug_view(
         )
         draw.text((dx + 12, dy - 6), "DOCK", fill=(255, 140, 0), font=font)
 
-    # Draw robot current position (bright green dot)
     rx, ry = to_px(robot_x, robot_y)
     dot_r = 7
     draw.ellipse(
@@ -412,13 +386,11 @@ def _render_debug_view(
         outline=(150, 255, 180),
     )
 
-    # Draw heading indicator
     heading_rad = math.radians(robot_heading)
     hx = rx + int(18 * math.cos(heading_rad))
     hy = ry - int(18 * math.sin(heading_rad))
     draw.line([(rx, ry), (hx, hy)], fill=(0, 255, 80), width=2)
 
-    # Info overlay (top-left)
     text_color = (180, 180, 190)
     dim_color = (100, 100, 120)
     y_text = 5
@@ -432,7 +404,6 @@ def _render_debug_view(
     view_h = range_y / 100
     draw.text((5, y_text), f"view: {view_w:.1f}x{view_h:.1f}m", fill=dim_color, font=font)
 
-    # Origin crosshair (if visible)
     ox, oy = to_px(0, 0)
     if 0 <= ox < size and 0 <= oy < size:
         draw.line([(ox - 8, oy), (ox + 8, oy)], fill=(80, 80, 80))
