@@ -195,8 +195,9 @@ class MapDisplayData:
         if resolution <= 0:
             return None
         cm_per_pixel = resolution / 10  # 60mm/px = 6cm/px
-        px = self.robot_x / cm_per_pixel - origin_x
-        py = self.robot_y / cm_per_pixel - origin_y
+        # display_map positions are in decimeters (same as dock field 8)
+        px = (self.robot_x * 10) / cm_per_pixel - origin_x
+        py = (self.robot_y * 10) / cm_per_pixel - origin_y
         return (px, py)
 
     @classmethod
