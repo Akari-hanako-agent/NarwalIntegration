@@ -119,15 +119,14 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """
         client = self.coordinator.client
         broadcast_age = client.last_broadcast_age
-        if not client.robot_awake or (
-            broadcast_age > self._BROADCAST_STALE_FOR_CMD
-        ):
+        stale = broadcast_age > self._BROADCAST_STALE_FOR_CMD
+        if not client.robot_awake or stale:
             _LOGGER.debug(
                 "Robot not ready (awake=%s, last_broadcast=%.1fs ago) — waking",
                 client.robot_awake,
                 broadcast_age,
             )
-            await client.wake(timeout=15.0)
+            await client.wake(timeout=15.0, force=stale)
 
         # Prime command pipeline: get_status sends get_device_base_status
         # via send_command, which properly consumes the field5 response.
@@ -149,7 +148,7 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         if is_cleaning and state.is_paused:
             await self.coordinator.client.resume(timeout=self._ACTION_TIMEOUT)
         else:
-            await self.coordinator.client.start(timeout=self._ACTION_TIMEOUT)
+            await self.coordinator.client.start()
 
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""

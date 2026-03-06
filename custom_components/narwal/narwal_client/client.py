@@ -533,7 +533,7 @@ class NarwalClient:
                 return  # connection probably lost
             await asyncio.sleep(0.2)
 
-    async def wake(self, timeout: float = WAKE_TIMEOUT) -> bool:
+    async def wake(self, timeout: float = WAKE_TIMEOUT, force: bool = False) -> bool:
         """Attempt to wake the robot from sleep.
 
         Sends a burst of wake commands and waits for the robot to start
@@ -543,11 +543,14 @@ class NarwalClient:
 
         Args:
             timeout: Maximum seconds to wait for the robot to respond.
+            force: If True, send wake burst even if robot_awake is True.
+                Use when broadcasts have gone stale but the flag hasn't
+                been reset yet.
 
         Returns:
             True if the robot is awake (received broadcasts), False otherwise.
         """
-        if self._robot_awake:
+        if self._robot_awake and not force:
             return True
 
         if not self.connected:
@@ -888,9 +891,21 @@ class NarwalClient:
         """Trigger locate sound — robot says 'Robot is here'."""
         return await self.send_command(TOPIC_CMD_YELL)
 
-    async def start(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
-        """Start cleaning."""
-        return await self.send_command(TOPIC_CMD_START_CLEAN, timeout=timeout)
+    async def start(self, **kwargs) -> None:
+        """Start cleaning (fire-and-forget, no field5 response expected)."""
+        if not self.connected:
+            raise NarwalConnectionError("Not connected to vacuum")
+        async with self._command_lock:
+            # Drain stale responses
+            while not self._response_queue.empty():
+                try:
+                    self._response_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            full_topic = self._full_topic(TOPIC_CMD_START_CLEAN)
+            frame = build_frame(full_topic, b"")
+            await self._ws.send(frame)
+            _LOGGER.debug("Sent command (fire-and-forget): %s", TOPIC_CMD_START_CLEAN)
 
     async def start_easy_clean(self) -> CommandResponse:
         """Start quick/easy clean."""
