@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -57,6 +58,7 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         self._fast_poll_remaining = 0
         self._prev_working_status = WorkingStatus.UNKNOWN
         self._map_fetch_pending = False
+        self._last_display_map_resub: float = 0.0
 
     async def async_setup(self) -> None:
         """Connect to the vacuum and start the WebSocket listener.
@@ -140,6 +142,30 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             self.hass.async_create_task(self._refresh_dock_status())
         self._prev_working_status = state.working_status
 
+        # display_map dropout recovery: if cleaning but no display_map for
+        # 30s, re-send topic subscription. Only subscription — no wake burst
+        # (wake bursts during cleaning cause pause bouncing).
+        is_cleaning = state.working_status in (
+            WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
+        )
+        if is_cleaning:
+            display_age = self.client.last_display_map_age
+            now = time.monotonic()
+            if (
+                display_age > 30.0
+                and now - self._last_display_map_resub > 45.0
+            ):
+                _LOGGER.info(
+                    "display_map dropout (%.0fs) — re-subscribing to topics",
+                    display_age,
+                )
+                self._last_display_map_resub = now
+                self.config_entry.async_create_background_task(
+                    self.hass,
+                    self._resub_topics(),
+                    f"{DOMAIN}_resub",
+                )
+
         self.async_set_updated_data(state)
 
         # Broadcast arrived — switch back to normal polling if in fast mode
@@ -165,6 +191,13 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         except Exception:
             _LOGGER.debug("Topic subscription failed after map load")
         self.async_set_updated_data(self.client.state)
+
+    async def _resub_topics(self) -> None:
+        """Re-send topic subscription to recover display_map during cleaning."""
+        try:
+            await self.client.subscribe_to_topics()
+        except Exception:
+            _LOGGER.debug("Topic re-subscription failed")
 
     async def _refresh_dock_status(self) -> None:
         """Immediate get_status() after return-to-dock to refresh dock fields."""

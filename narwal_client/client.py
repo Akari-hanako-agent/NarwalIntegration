@@ -134,6 +134,13 @@ class NarwalClient:
             return 0.0
         return time.monotonic() - self._last_broadcast_time
 
+    @property
+    def last_display_map_age(self) -> float:
+        """Seconds since last display_map broadcast (999.0 if none received)."""
+        if self._last_display_map_time <= 0:
+            return 999.0
+        return time.monotonic() - self._last_display_map_time
+
     async def connect(self) -> None:
         """Establish WebSocket connection to the vacuum.
 
