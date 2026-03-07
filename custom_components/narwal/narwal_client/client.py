@@ -955,8 +955,12 @@ class NarwalClient:
         """Resume paused task."""
         return await self.send_command(TOPIC_CMD_RESUME, timeout=timeout)
 
-    async def stop(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
-        """Force-stop current task."""
+    async def stop(self, timeout: float = 15.0) -> CommandResponse:
+        """Force-stop current task.
+
+        Note: force_end is slow — robot physically stops before responding.
+        Previous testing shows 10-15s response times from CLEANING state.
+        """
         return await self.send_command(TOPIC_CMD_FORCE_END, timeout=timeout)
 
     async def cancel(self) -> CommandResponse:
