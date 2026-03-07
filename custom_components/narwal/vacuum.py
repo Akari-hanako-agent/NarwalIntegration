@@ -12,7 +12,7 @@ from homeassistant.components.vacuum import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .narwal_client import FanLevel, WorkingStatus
+from .narwal_client import FanLevel, NarwalCommandError, WorkingStatus
 
 from . import NarwalConfigEntry
 from .const import FAN_SPEED_LIST, FAN_SPEED_MAP
@@ -125,7 +125,8 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
                 client.robot_awake,
                 broadcast_age,
             )
-            await client.wake(timeout=15.0, force=stale)
+            if not await client.wake(timeout=15.0, force=stale):
+                raise NarwalCommandError("Robot did not wake up — cannot send command")
 
     async def async_start(self) -> None:
         """Start or resume cleaning."""

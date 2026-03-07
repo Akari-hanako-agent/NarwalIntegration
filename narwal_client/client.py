@@ -299,6 +299,12 @@ class NarwalClient:
             try:
                 if not self.connected:
                     await self.connect()
+                    # Immediate wake burst on (re)connect — the fresh TCP
+                    # connection may trigger the robot's deep-sleep wake
+                    # interrupt, but only if we send commands before it
+                    # expires.  Don't wait for the keepalive loop's first
+                    # tick (15s delay would be too late).
+                    await self._send_wake_burst()
 
                 retry_delay = RECONNECT_INITIAL_DELAY  # reset on success
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
