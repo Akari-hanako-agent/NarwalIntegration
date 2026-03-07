@@ -71,23 +71,15 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         is_cleaning_state = state.working_status in (
             WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
         )
-        # Returning takes priority over paused — robot can report both
-        # flags simultaneously during return-to-dock sequence.
-        if state.is_returning:
-            return VacuumActivity.RETURNING
-        # Robot still broadcasts CLEANING after physically docking —
-        # dock fields update before working_status transitions.
-        # Check dock signals while in CLEANING state to catch this.
-        if is_cleaning_state and (
-            state.dock_sub_state == 1
-            or state.dock_field11 == 2
-            or state.dock_field47 == 3
-        ):
-            return VacuumActivity.DOCKED
         # is_paused (field 3.2) stays stale after docking — only trust
-        # during active cleaning when not docked.
+        # during cleaning states. Paused takes priority over returning
+        # since the robot physically stops when paused mid-return.
         if state.is_paused and is_cleaning_state:
             return VacuumActivity.PAUSED
+        # Check returning before cleaning — robot keeps working_status=CLEANING
+        # while navigating back to dock (field 3.7=1 indicates returning)
+        if state.is_returning:
+            return VacuumActivity.RETURNING
         if state.is_cleaning:
             return VacuumActivity.CLEANING
         if state.is_docked:
@@ -162,16 +154,26 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""
         await self._ensure_awake()
-        await self.coordinator.client.stop(timeout=self._ACTION_TIMEOUT)
+        resp = await self.coordinator.client.stop(timeout=self._ACTION_TIMEOUT)
+        _LOGGER.info("Stop response: code=%s, success=%s", resp.result_code, resp.success)
 
     async def async_pause(self) -> None:
         """Pause cleaning."""
-        await self.coordinator.client.pause()
+        resp = await self.coordinator.client.pause()
+        _LOGGER.info("Pause response: code=%s, success=%s", resp.result_code, resp.success)
 
     async def async_return_to_base(self, **kwargs) -> None:
         """Return to the dock."""
         await self._ensure_awake()
-        await self.coordinator.client.return_to_base(timeout=self._ACTION_TIMEOUT)
+        resp = await self.coordinator.client.return_to_base(timeout=self._ACTION_TIMEOUT)
+        _LOGGER.info(
+            "Return-to-base response: code=%s, success=%s",
+            resp.result_code, resp.success,
+        )
+        if not resp.success:
+            _LOGGER.warning(
+                "Return-to-base did not succeed (code=%s)", resp.result_code,
+            )
 
     async def async_locate(self, **kwargs) -> None:
         """Locate the vacuum — robot says 'Robot is here'."""
