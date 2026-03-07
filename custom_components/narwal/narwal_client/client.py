@@ -712,17 +712,22 @@ class NarwalClient:
                         except Exception:
                             _LOGGER.debug("Topic re-subscribe failed")
 
-                    # Robot is awake — send lightweight heartbeat
-                    try:
-                        payload = self._encode_varint_field(1, 1)
-                        frame = build_frame(
-                            self._full_topic(TOPIC_CMD_APP_HEARTBEAT), payload
-                        )
-                        await self._ws.send(frame)
-                        _LOGGER.debug("Keepalive heartbeat sent")
-                    except Exception:
-                        _LOGGER.debug("Keepalive send failed")
-                        break
+                    # Robot is awake — send lightweight heartbeat, but ONLY
+                    # when idle/docked. During cleaning the robot stays awake
+                    # on its own, and heartbeats can cause it to pause.
+                    if self.state.working_status not in (
+                        WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
+                    ):
+                        try:
+                            payload = self._encode_varint_field(1, 1)
+                            frame = build_frame(
+                                self._full_topic(TOPIC_CMD_APP_HEARTBEAT), payload
+                            )
+                            await self._ws.send(frame)
+                            _LOGGER.debug("Keepalive heartbeat sent")
+                        except Exception:
+                            _LOGGER.debug("Keepalive send failed")
+                            break
                 else:
                     # Robot appears asleep — send full wake burst
                     # (wake burst includes topic subscription)
