@@ -139,7 +139,7 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""
         await self._ensure_awake()
-        resp = await self.coordinator.client.stop(timeout=self._ACTION_TIMEOUT)
+        resp = await self.coordinator.client.stop()
         _LOGGER.info("Stop response: code=%s, success=%s", resp.result_code, resp.success)
 
     async def async_pause(self) -> None:

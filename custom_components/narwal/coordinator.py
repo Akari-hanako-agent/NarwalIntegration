@@ -84,6 +84,13 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         except Exception:
             _LOGGER.debug("Could not fetch initial map")
 
+        # Subscribe to broadcast topics (display_map, working_status, etc.)
+        # Must be sent before listener starts so display_map flows during cleaning.
+        try:
+            await self.client.subscribe_to_topics()
+        except Exception:
+            _LOGGER.debug("Could not send topic subscription at startup")
+
         self.async_set_updated_data(self.client.state)
 
         # Set up push callback and start persistent listener
