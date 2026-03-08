@@ -246,11 +246,12 @@ class TestNarwalState:
         assert state.dock_activity == 2
 
     def test_returning_via_dock_sub_state_only(self) -> None:
-        """Fallback: dock_sub_state=2 while CLEANING also indicates returning."""
+        """dock_sub_state=2 alone is NOT enough — both field 3.7 AND 3.10 required."""
         state = NarwalState()
-        # Must be in CLEANING state — STANDBY with dock_sub_state=2 is "just docked"
+        # Only dock_sub_state=2 without field 3.7 — should NOT be returning
+        # (single stale field causes false positives during normal cleaning)
         state.update_from_base_status({"3": {"1": 4, "10": 2}})
-        assert state.is_returning
+        assert not state.is_returning
 
     def test_not_returning_when_standby_with_dock_sub_state(self) -> None:
         """STANDBY with dock_sub_state=2 means docked, not returning."""
@@ -309,11 +310,11 @@ class TestMapData:
             "17": b"",
         }}
         m = MapData.from_response(decoded)
-        # -8.0188dm * 10 / 6 + 280 ≈ 266.6, 0.221dm * 10 / 6 + 341 ≈ 341.4
+        # factor 1.0: -8.0188 - (-280) = 271.98, 0.221 - (-341) = 341.22
         assert m.dock_x is not None
         assert m.dock_y is not None
-        assert abs(m.dock_x - 266.6) < 1.0
-        assert abs(m.dock_y - 341.4) < 1.0
+        assert abs(m.dock_x - 272.0) < 1.0
+        assert abs(m.dock_y - 341.2) < 1.0
 
     def test_dock_position_from_field8_float(self) -> None:
         """bbp may return fixed32 fields as Python floats directly."""
@@ -326,11 +327,11 @@ class TestMapData:
             "17": b"",
         }}
         m = MapData.from_response(decoded)
-        # -8.0188dm * 10 / 6 + 280 ≈ 266.6, 0.221dm * 10 / 6 + 341 ≈ 341.4
+        # factor 1.0: -8.0188 - (-280) = 271.98, 0.221 - (-341) = 341.22
         assert m.dock_x is not None
         assert m.dock_y is not None
-        assert abs(m.dock_x - 266.6) < 1.0
-        assert abs(m.dock_y - 341.4) < 1.0
+        assert abs(m.dock_x - 272.0) < 1.0
+        assert abs(m.dock_y - 341.2) < 1.0
 
     def test_dock_position_missing_field8(self) -> None:
         """No dock position when field 8 is missing."""
