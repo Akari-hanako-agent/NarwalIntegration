@@ -46,6 +46,7 @@ def install() -> None:
     # homeassistant.core
     ha_core = _mod("homeassistant.core", ha)
     ha_core.HomeAssistant = MagicMock  # type: ignore[attr-defined]
+    ha_core.callback = lambda f: f  # type: ignore[attr-defined]
 
     # homeassistant.exceptions
     ha_exc = _mod("homeassistant.exceptions", ha)
