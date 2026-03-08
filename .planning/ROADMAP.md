@@ -35,8 +35,8 @@
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Implement Segment API + start_rooms() + sync copies
-- [ ] 09-02-PLAN.md — Tests + physical robot validation
+- [x] 09-01-PLAN.md — Implement Segment API + start_rooms() + sync copies
+- [x] 09-02-PLAN.md — Tests + physical robot validation
 
 **Research**: See ha-vacuum-segments.md in memory for HA 2026.3 API research
 
@@ -67,6 +67,6 @@ Plans:
 | Phase | Status | Completed |
 |-------|--------|-----------|
 | 0-8 (v0.5) | Complete | 2026-03-08 |
-| 9. Room-Specific Cleaning | Planning complete | - |
+| 9. Room-Specific Cleaning | Complete | 2026-03-08 |
 | 10. Obstacle Mapping | Not started (research needed) | - |
 | 11. Camera RE | Not started (research needed) | - |
