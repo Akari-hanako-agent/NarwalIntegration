@@ -59,6 +59,8 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         self._prev_working_status = WorkingStatus.UNKNOWN
         self._map_fetch_pending = False
         self._last_display_map_resub: float = 0.0
+        self._consecutive_failures = 0
+        self._max_failures = 5  # 5 * 60s = 5 minutes before entities go unavailable
 
     async def async_setup(self) -> None:
         """Connect to the vacuum and start the WebSocket listener.
@@ -121,6 +123,9 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
 
     def _on_state_update(self, state: NarwalState) -> None:
         """Handle a push state update from the WebSocket listener."""
+        # Push data arriving means robot is reachable — reset failure counter
+        self._consecutive_failures = 0
+
         # Fetch static map if missing (get_map failed at startup)
         if state.map_data is None and not self._map_fetch_pending:
             self._map_fetch_pending = True
@@ -208,20 +213,32 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             _LOGGER.debug("Failed to refresh dock status after transition")
 
     async def _async_update_data(self) -> NarwalState:
-        """Polling fallback — fetch status if no push updates arrived."""
-        if not self.client.connected:
-            try:
-                await self.client.connect()
-            except NarwalConnectionError as err:
-                raise UpdateFailed(f"Cannot connect to vacuum: {err}") from err
+        """Polling fallback — fetch status if no push updates arrived.
 
-        # If the robot is asleep the command will time out — return stale
-        # data so entities stay available. The keepalive loop handles wake.
+        Reconnection is handled by the listener loop's exponential backoff.
+        We do NOT call client.connect() here to avoid racing with the listener
+        and violating the single-WS-connection-per-IP constraint.
+
+        On poll failure, returns stale data for up to _max_failures consecutive
+        failures (~5 minutes) before raising UpdateFailed.
+        """
         try:
+            if not self.client.connected:
+                raise NarwalConnectionError("Not connected")
             await self.client.get_status(full_update=True)
         except Exception as err:
-            _LOGGER.debug("Poll failed (robot may be asleep): %s", err)
-            return self.client.state
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._max_failures:
+                raise UpdateFailed(
+                    f"Vacuum unreachable for {self._consecutive_failures} consecutive polls"
+                ) from err
+            _LOGGER.debug(
+                "Poll %d/%d failed (robot may be asleep): %s",
+                self._consecutive_failures, self._max_failures, err,
+            )
+            return self.client.state  # stale data keeps entities available
+        else:
+            self._consecutive_failures = 0
 
         # Retry map fetch if it failed during setup
         if self.client.state.map_data is None:
