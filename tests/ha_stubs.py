@@ -29,6 +29,13 @@ def install() -> None:
             setattr(parent, attr, m)
         return m
 
+    # --- voluptuous (HA dependency, not in our test requirements) ---
+    vol = _mod("voluptuous")
+    vol.Schema = MagicMock()  # type: ignore[attr-defined]
+    vol.Required = MagicMock(side_effect=lambda *a, **kw: a[0] if a else "key")  # type: ignore[attr-defined]
+    vol.Optional = MagicMock(side_effect=lambda *a, **kw: a[0] if a else "key")  # type: ignore[attr-defined]
+    vol.In = MagicMock()  # type: ignore[attr-defined]
+
     # --- homeassistant ---
     ha = _mod("homeassistant")
 
