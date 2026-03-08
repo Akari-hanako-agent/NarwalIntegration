@@ -97,19 +97,89 @@ def install() -> None:
     ha_uc.DataUpdateCoordinator = _DataUpdateCoordinator  # type: ignore[attr-defined]
     ha_uc.UpdateFailed = type("UpdateFailed", (Exception,), {})  # type: ignore[attr-defined]
 
+    class _CoordinatorEntity:
+        """Stub for CoordinatorEntity base class."""
+
+        def __init__(self, coordinator: object) -> None:
+            self.coordinator = coordinator
+
+        def __init_subclass__(cls, **kw: object) -> None:
+            pass
+
+        def __class_getitem__(cls, item: object) -> type:
+            return cls
+
+        def async_write_ha_state(self) -> None:
+            pass
+
+        def _handle_coordinator_update(self) -> None:
+            pass
+
+    ha_uc.CoordinatorEntity = _CoordinatorEntity  # type: ignore[attr-defined]
+
     ha_dr = _mod("homeassistant.helpers.device_registry", ha_helpers)
     ha_dr.DeviceInfo = dict  # type: ignore[attr-defined]
 
-    _mod("homeassistant.helpers.entity_platform", ha_helpers)
+    ha_ep = _mod("homeassistant.helpers.entity_platform", ha_helpers)
+    ha_ep.AddConfigEntryEntitiesCallback = MagicMock  # type: ignore[attr-defined]
 
     # homeassistant.components.*
     ha_comp = _mod("homeassistant.components", ha)
 
     ha_vac = _mod("homeassistant.components.vacuum", ha_comp)
-    ha_vac.Segment = MagicMock  # type: ignore[attr-defined]
-    ha_vac.StateVacuumEntity = MagicMock  # type: ignore[attr-defined]
-    ha_vac.VacuumActivity = MagicMock  # type: ignore[attr-defined]
-    ha_vac.VacuumEntityFeature = MagicMock  # type: ignore[attr-defined]
+    class _Segment:
+        """Stub for homeassistant.components.vacuum.Segment."""
+        def __init__(self, *, id: str, name: str, group: str | None = None) -> None:
+            self.id = id
+            self.name = name
+            self.group = group
+
+    ha_vac.Segment = _Segment  # type: ignore[attr-defined]
+
+    class _StateVacuumEntity:
+        """Stub for StateVacuumEntity base class."""
+        last_seen_segments: list | None = None
+
+        def __init_subclass__(cls, **kw: object) -> None:
+            pass
+
+        def async_create_segments_issue(self) -> None:
+            pass
+
+        def async_write_ha_state(self) -> None:
+            pass
+
+    ha_vac.StateVacuumEntity = _StateVacuumEntity  # type: ignore[attr-defined]
+
+    class _VacuumActivity:
+        """Stub for VacuumActivity enum."""
+        IDLE = "idle"
+        CLEANING = "cleaning"
+        DOCKED = "docked"
+        PAUSED = "paused"
+        RETURNING = "returning"
+        ERROR = "error"
+
+    ha_vac.VacuumActivity = _VacuumActivity  # type: ignore[attr-defined]
+
+    class _VacuumEntityFeature:
+        """Stub for VacuumEntityFeature flags."""
+        STATE = 1
+        START = 2
+        STOP = 4
+        PAUSE = 8
+        RETURN_HOME = 16
+        FAN_SPEED = 32
+        LOCATE = 64
+        CLEAN_AREA = 128
+
+        def __or__(self, other: object) -> int:
+            return 0
+
+        def __ror__(self, other: object) -> int:
+            return 0
+
+    ha_vac.VacuumEntityFeature = _VacuumEntityFeature  # type: ignore[attr-defined]
 
     ha_sensor = _mod("homeassistant.components.sensor", ha_comp)
     ha_sensor.SensorEntity = MagicMock  # type: ignore[attr-defined]
