@@ -20,11 +20,63 @@ class DeviceInfo:
 
 @dataclass
 class RoomInfo:
-    """A room on the map."""
+    """A room on the map.
+
+    Fields from get_map / get_editable_map field 2.12:
+      field 1: room_id (matches pixel value >> 8 in map grid)
+      field 2: room_sub_type — ROOM_TYPE enum from APK (0=unspecified,
+               1=main bedroom, 2=secondary room, 3=living room, 4=kitchen,
+               5=study, 6=bathroom, 7=dining room, 8=corridor, 9=balcony,
+               10=utility room, 11=cloak room, 12=nursery, 13=recreation,
+               14=shower room, 15=other)
+      field 3: user-assigned name (UTF-8, empty if not named by user)
+      field 4: category (1=room, 2=utility/small space)
+      field 8: instance_index (1-based, for numbering duplicates: Bathroom 1, 2, 3...)
+    """
 
     room_id: int = 0
-    name: str = ""
-    room_type: int = 0
+    name: str = ""  # user-assigned name from field 3
+    room_sub_type: int = 0  # ROOM_TYPE enum from field 2
+    category: int = 0  # 1=room, 2=utility (field 4)
+    instance_index: int = 0  # numbering for duplicates (field 8)
+
+    # ROOM_TYPE enum → default display name (from APK libapp.so string analysis)
+    ROOM_TYPE_NAMES: dict[int, str] = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self.ROOM_TYPE_NAMES is None:
+            object.__setattr__(self, "ROOM_TYPE_NAMES", {
+                0: "Room",
+                1: "Primary Bedroom",
+                2: "Secondary Bedroom",
+                3: "Living Room",
+                4: "Kitchen",
+                5: "Study",
+                6: "Bathroom",
+                7: "Dining Room",
+                8: "Corridor",
+                9: "Balcony",
+                10: "Utility Room",
+                11: "Cloak Room",
+                12: "Nursery",
+                13: "Recreation Room",
+                14: "Shower Room",
+                15: "Other",
+            })
+
+    @property
+    def display_name(self) -> str:
+        """Return user name if set, otherwise generate default from ROOM_TYPE enum.
+
+        Matches Narwal app behavior: unnamed rooms show their type name
+        with an instance number suffix for duplicates (e.g. "Bathroom 2").
+        """
+        if self.name:
+            return self.name
+        base = self.ROOM_TYPE_NAMES.get(self.room_sub_type, "Room")
+        if self.instance_index > 1:
+            return f"{base} {self.instance_index}"
+        return base
 
 
 def _to_float32(val: Any) -> float | None:
@@ -88,7 +140,9 @@ class MapData:
                 rooms.append(RoomInfo(
                     room_id=int(room.get("1", 0)),
                     name=name,
-                    room_type=int(room.get("2", 0)),
+                    room_sub_type=int(room.get("2", 0)),
+                    category=int(room.get("4", 0)),
+                    instance_index=int(room.get("8", 0)),
                 ))
 
         compressed = payload.get("17", b"")

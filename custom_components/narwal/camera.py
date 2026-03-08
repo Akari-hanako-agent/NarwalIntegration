@@ -255,7 +255,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
             room_names: dict[int, str] | None = None
             if static_map.rooms:
                 room_names = {
-                    r.room_id: r.name for r in static_map.rooms if r.name
+                    r.room_id: r.display_name for r in static_map.rooms
                 }
             base_img = await self.hass.async_add_executor_job(
                 render_base_map,
