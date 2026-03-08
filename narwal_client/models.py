@@ -184,8 +184,8 @@ class MapData:
                     y_dm = _to_float32(pos["2"])
                     if x_dm is not None and y_dm is not None:
                         cm_per_pixel = resolution / 10  # 60mm/px = 6cm/px
-                        dock_x = (x_dm * 10) / cm_per_pixel - origin_x
-                        dock_y = (y_dm * 10) / cm_per_pixel - origin_y
+                        dock_x = x_dm / cm_per_pixel - origin_x
+                        dock_y = y_dm / cm_per_pixel - origin_y
                 except (struct.error, OverflowError, ValueError, TypeError):
                     pass
 
@@ -252,9 +252,9 @@ class MapDisplayData:
         if resolution <= 0:
             return None
         cm_per_pixel = resolution / 10  # 60mm/px = 6cm/px
-        # display_map positions are in decimeters (same as dock field 8)
-        px = (self.robot_x * 10) / cm_per_pixel - origin_x
-        py = (self.robot_y * 10) / cm_per_pixel - origin_y
+        # display_map positions: divide by cm_per_pixel then subtract origin
+        px = self.robot_x / cm_per_pixel - origin_x
+        py = self.robot_y / cm_per_pixel - origin_y
         return (px, py)
 
     @classmethod

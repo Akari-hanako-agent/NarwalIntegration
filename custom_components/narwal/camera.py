@@ -291,8 +291,8 @@ class NarwalMapCamera(NarwalEntity, Camera):
                     dock_ref_grid_x = dock_ref_grid_y = None
                     if display.dock_ref_x != 0.0 or display.dock_ref_y != 0.0:
                         cm_pp = static_map.resolution / 10
-                        dock_ref_grid_x = (display.dock_ref_x * 10) / cm_pp - static_map.origin_x
-                        dock_ref_grid_y = (display.dock_ref_y * 10) / cm_pp - static_map.origin_y
+                        dock_ref_grid_x = display.dock_ref_x / cm_pp - static_map.origin_x
+                        dock_ref_grid_y = display.dock_ref_y / cm_pp - static_map.origin_y
                     _LOGGER.info(
                         "POSITION DIAG: robot_raw=(%.2f, %.2f) robot_grid=(%.1f, %.1f) "
                         "| dock_ref_raw=(%.2f, %.2f) dock_ref_grid=(%.1f, %.1f) "
