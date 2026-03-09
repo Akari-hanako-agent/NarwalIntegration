@@ -16,7 +16,10 @@ from narwal_client.map_renderer import (
     render_overlay,
     decompress_map,
     _decode_packed_varints,
+    OBSTACLE_COLORS,
+    OBSTACLE_COLOR_DEFAULT,
 )
+from narwal_client.models import ObstacleInfo
 
 
 def _make_compressed_grid(width: int, height: int, fill_value: int = 0) -> bytes:
@@ -205,3 +208,93 @@ class TestRenderOverlay:
         from PIL import Image
         img = Image.open(io.BytesIO(png))
         assert img.size == (width, height)
+
+
+class TestObstacleRendering:
+    """Tests for obstacle rendering on base map."""
+
+    def test_render_base_map_with_obstacles(self) -> None:
+        """render_base_map with obstacles draws rectangles at correct grid positions."""
+        from PIL import Image
+
+        width, height = 50, 50
+        compressed = _make_room_grid(width, height, room_id=1)
+        obstacles = [
+            ObstacleInfo(id=1, type_id=14, center_x=5.0, center_y=5.0, width=6.0, height=4.0),
+        ]
+        # origin (0,0) so grid coords = center coords
+        result = render_base_map(
+            compressed, width, height,
+            obstacles=obstacles, origin_x=0, origin_y=0,
+        )
+        assert result is not None
+        assert isinstance(result, Image.Image)
+        assert result.size == (width, height)
+
+    def test_obstacle_type_colors_exist(self) -> None:
+        """OBSTACLE_COLORS dict has entries for all 5 known types."""
+        assert 2 in OBSTACLE_COLORS   # furniture
+        assert 4 in OBSTACLE_COLORS   # toilet
+        assert 6 in OBSTACLE_COLORS   # sink
+        assert 14 in OBSTACLE_COLORS  # door
+        assert 28 in OBSTACLE_COLORS  # obstacle
+        assert isinstance(OBSTACLE_COLOR_DEFAULT, tuple)
+        assert len(OBSTACLE_COLOR_DEFAULT) == 3
+
+    def test_obstacle_colors_are_distinct(self) -> None:
+        """Each obstacle type has a distinct color (furniture != door != obstacle)."""
+        assert OBSTACLE_COLORS[2] != OBSTACLE_COLORS[14]   # furniture != door
+        assert OBSTACLE_COLORS[14] != OBSTACLE_COLORS[28]  # door != obstacle
+        assert OBSTACLE_COLORS[28] != OBSTACLE_COLORS[2]   # obstacle != furniture
+
+    def test_empty_obstacles_same_as_no_obstacles(self) -> None:
+        """render_base_map with empty obstacles list produces same output as without."""
+        from PIL import Image
+
+        width, height = 20, 20
+        compressed = _make_room_grid(width, height, room_id=1)
+
+        result_none = render_base_map(compressed, width, height, obstacles=None)
+        result_empty = render_base_map(compressed, width, height, obstacles=[])
+
+        assert result_none is not None
+        assert result_empty is not None
+        # Both should produce identical images
+        assert list(result_none.getdata()) == list(result_empty.getdata())
+
+    def test_out_of_bounds_obstacles_skipped(self) -> None:
+        """Obstacles with out-of-bounds coordinates are skipped (no crash)."""
+        from PIL import Image
+
+        width, height = 20, 20
+        compressed = _make_room_grid(width, height, room_id=1)
+        obstacles = [
+            ObstacleInfo(id=1, type_id=14, center_x=500.0, center_y=500.0, width=6.0, height=4.0),
+            ObstacleInfo(id=2, type_id=28, center_x=-100.0, center_y=-100.0, width=6.0, height=4.0),
+        ]
+
+        result = render_base_map(
+            compressed, width, height,
+            obstacles=obstacles, origin_x=0, origin_y=0,
+        )
+        assert result is not None
+        assert isinstance(result, Image.Image)
+
+    def test_obstacle_modifies_image(self) -> None:
+        """An in-bounds obstacle should change some pixels compared to no-obstacle render."""
+        from PIL import Image
+
+        width, height = 40, 40
+        compressed = _make_room_grid(width, height, room_id=1)
+
+        result_without = render_base_map(compressed, width, height)
+        result_with = render_base_map(
+            compressed, width, height,
+            obstacles=[ObstacleInfo(id=1, type_id=2, center_x=20.0, center_y=20.0, width=10.0, height=10.0)],
+            origin_x=0, origin_y=0,
+        )
+
+        assert result_without is not None
+        assert result_with is not None
+        # Images should differ (obstacle drawn on one but not other)
+        assert list(result_without.getdata()) != list(result_with.getdata())

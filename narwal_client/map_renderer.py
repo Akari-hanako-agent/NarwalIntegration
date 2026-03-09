@@ -46,6 +46,16 @@ ROOM_COLORS: list[tuple[int, int, int]] = [
     (174, 198, 207),  # 22 - pastel blue
 ]
 
+# Obstacle/furniture annotation colors by type category
+OBSTACLE_COLORS: dict[int, tuple[int, int, int]] = {
+    2: (180, 140, 100),    # furniture - tan
+    4: (120, 180, 220),    # toilet - light blue
+    6: (120, 180, 220),    # sink - light blue
+    14: (220, 220, 220),   # door - light gray
+    28: (255, 100, 80),    # obstacle - red/orange
+}
+OBSTACLE_COLOR_DEFAULT = (200, 200, 200)
+
 # Special pixel colors
 COLOR_UNKNOWN = (40, 40, 40)         # outside map / unmapped
 COLOR_UNASSIGNED_FLOOR = (200, 200, 200)  # floor not assigned to a room
@@ -387,11 +397,19 @@ def render_base_map(
     dock_x: float | None = None,
     dock_y: float | None = None,
     room_names: dict[int, str] | None = None,
+    obstacles: "list | None" = None,
+    origin_x: int = 0,
+    origin_y: int = 0,
 ) -> "Image.Image | None":
     """Render the static floor plan as a PIL Image (no robot overlay).
 
     Returns a PIL Image that can be cached and reused across frames.
     Only needs to be re-rendered when the static map data changes.
+
+    Args:
+        obstacles: List of ObstacleInfo objects to render (optional).
+        origin_x: Map origin X offset for obstacle coordinate transform.
+        origin_y: Map origin Y offset for obstacle coordinate transform.
     """
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -468,6 +486,38 @@ def render_base_map(
             for ox, oy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 draw.text((tx + ox, ty + oy), name, fill=(0, 0, 0), font=font)
             draw.text((tx, ty), name, fill=(255, 255, 255), font=font)
+
+    # Draw obstacle/furniture annotations (static data from get_map field 2.32)
+    if obstacles:
+        try:
+            obs_font = ImageFont.truetype("arial.ttf", 8)
+        except (IOError, OSError):
+            obs_font = ImageFont.load_default()
+        for obs in obstacles:
+            gx, gy = obs.to_grid_coords(origin_x, origin_y)
+            # Skip out-of-bounds obstacles
+            if gx < 0 or gx >= width or gy < 0 or gy >= height:
+                continue
+            img_x = int(gx)
+            img_y = height - 1 - int(gy)
+            half_w = max(1, int(obs.width / 2))
+            half_h = max(1, int(obs.height / 2))
+            color = OBSTACLE_COLORS.get(obs.type_id, OBSTACLE_COLOR_DEFAULT)
+            draw.rectangle(
+                [img_x - half_w, img_y - half_h, img_x + half_w, img_y + half_h],
+                outline=color, width=1,
+            )
+            # Draw label centered above the rectangle
+            label = obs.display_name
+            bbox = obs_font.getbbox(label)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            lx = img_x - tw // 2
+            ly = img_y - half_h - th - 2
+            # Dark outline for readability
+            for ox, oy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                draw.text((lx + ox, ly + oy), label, fill=(0, 0, 0), font=obs_font)
+            draw.text((lx, ly), label, fill=color, font=obs_font)
 
     if dock_x is not None and dock_y is not None:
         dock_size = max(4, min(width, height) // 60)

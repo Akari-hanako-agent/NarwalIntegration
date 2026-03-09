@@ -265,6 +265,9 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 static_map.dock_x,
                 static_map.dock_y,
                 room_names,
+                static_map.obstacles,
+                static_map.origin_x,
+                static_map.origin_y,
             )
             if base_img:
                 self._base_map_image = base_img

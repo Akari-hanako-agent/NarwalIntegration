@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from .const import CommandResult, FanLevel, MopHumidity, WorkingStatus
 
@@ -79,6 +79,52 @@ class RoomInfo:
         return base
 
 
+@dataclass
+class ObstacleInfo:
+    """An obstacle/furniture annotation on the map.
+
+    Parsed from get_map field 2.32 (MapFurnitureInfoList).
+    The typeId is a CATEGORY code, not the specific furniture enum.
+
+    bbp field mapping (confirmed from probe data + APK schema):
+      bbp field 1 -> id (int32)
+      bbp field 2 -> typeId (uint32, category code)
+      bbp field 3.1.1 -> centerX (float32)
+      bbp field 3.1.2 -> centerY (float32)
+      bbp field 3.2 -> width (float32)
+      bbp field 3.3 -> height (float32)
+      bbp field 4 -> angle (float32, degrees)
+    """
+
+    id: int = 0
+    type_id: int = 0       # Category: 2=furniture, 4=toilet, 6=sink, 14=door, 28=obstacle
+    center_x: float = 0.0  # World X coordinate
+    center_y: float = 0.0  # World Y coordinate
+    width: float = 0.0     # Object width in grid units
+    height: float = 0.0    # Object height in grid units
+    angle: float = 0.0     # Rotation in degrees
+
+    TYPE_NAMES: ClassVar[dict[int, str]] = {
+        2: "Furniture",
+        4: "Toilet",
+        6: "Sink",
+        14: "Door",
+        28: "Obstacle",
+    }
+
+    @property
+    def display_name(self) -> str:
+        """Return human-readable name for the obstacle type."""
+        return self.TYPE_NAMES.get(self.type_id, f"Object {self.type_id}")
+
+    def to_grid_coords(self, origin_x: int, origin_y: int) -> tuple[float, float]:
+        """Convert world coordinates to grid pixel coordinates.
+
+        Same transform as dock/robot: pixel = raw - origin.
+        """
+        return (self.center_x - origin_x, self.center_y - origin_y)
+
+
 def _to_float32(val: Any) -> float | None:
     """Convert a protobuf value to float32.
 
@@ -97,6 +143,47 @@ def _to_float32(val: Any) -> float | None:
     return None
 
 
+def _parse_obstacles(field32: dict) -> list[ObstacleInfo]:
+    """Parse obstacle/furniture annotations from bbp-decoded field 2.32.
+
+    Args:
+        field32: The decoded dict from map payload field "32".
+
+    Returns:
+        List of ObstacleInfo objects. Skips items that fail to parse.
+    """
+    items = field32.get("1", [])
+    if isinstance(items, dict):
+        items = [items]
+
+    obstacles: list[ObstacleInfo] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            pos = item.get("3", {})
+            center = pos.get("1", {}) if isinstance(pos, dict) else {}
+
+            cx = _to_float32(center.get("1")) if isinstance(center, dict) else None
+            cy = _to_float32(center.get("2")) if isinstance(center, dict) else None
+            w = _to_float32(pos.get("2")) if isinstance(pos, dict) else None
+            h = _to_float32(pos.get("3")) if isinstance(pos, dict) else None
+            angle = _to_float32(item.get("4"))
+
+            obstacles.append(ObstacleInfo(
+                id=int(item.get("1", 0)),
+                type_id=int(item.get("2", 0)),
+                center_x=cx or 0.0,
+                center_y=cy or 0.0,
+                width=w or 0.0,
+                height=h or 0.0,
+                angle=angle or 0.0,
+            ))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return obstacles
+
+
 @dataclass
 class MapData:
     """Map data from get_map response."""
@@ -112,6 +199,7 @@ class MapData:
     dock_y: float | None = None
     origin_x: int = 0  # x pixel offset from field 2.6.3
     origin_y: int = 0  # y pixel offset from field 2.6.1
+    obstacles: list[ObstacleInfo] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -187,6 +275,12 @@ class MapData:
                 except (struct.error, OverflowError, ValueError, TypeError):
                     pass
 
+        # Parse obstacle/furniture annotations from field 32 (MapFurnitureInfoList)
+        obstacles: list[ObstacleInfo] = []
+        field32 = payload.get("32")
+        if isinstance(field32, dict):
+            obstacles = _parse_obstacles(field32)
+
         return cls(
             width=int(payload.get("4", 0)),
             height=int(payload.get("5", 0)),
@@ -199,6 +293,7 @@ class MapData:
             dock_y=dock_y,
             origin_x=origin_x,
             origin_y=origin_y,
+            obstacles=obstacles,
             raw=payload,
         )
 
