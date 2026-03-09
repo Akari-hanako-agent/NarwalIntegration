@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 
 from narwal_client.const import WorkingStatus
-from narwal_client.models import MapData, NarwalState
+from narwal_client.models import MapData, NarwalState, ObstacleInfo, _parse_obstacles
 
 
 class TestNarwalState:
@@ -363,3 +363,152 @@ class TestMapData:
         m = MapData.from_response({})
         assert m.width == 0
         assert m.dock_x is None
+
+    def test_obstacles_from_field32(self) -> None:
+        """MapData.from_response includes obstacles parsed from field 32."""
+        decoded = {"2": {
+            "3": 60,
+            "4": 341,
+            "5": 494,
+            "6": {"1": -341, "3": -280},
+            "17": b"",
+            "32": {
+                "1": [
+                    {
+                        "1": 1,
+                        "2": 14,
+                        "3": {"1": {"1": _float_to_uint32(-110.5), "2": _float_to_uint32(-129.5)}, "2": _float_to_uint32(11.0), "3": _float_to_uint32(41.0)},
+                        "4": _float_to_uint32(180.0),
+                    },
+                ],
+            },
+        }}
+        m = MapData.from_response(decoded)
+        assert len(m.obstacles) == 1
+        obs = m.obstacles[0]
+        assert obs.id == 1
+        assert obs.type_id == 14
+        assert obs.display_name == "Door"
+        assert abs(obs.center_x - (-110.5)) < 0.5
+        assert abs(obs.center_y - (-129.5)) < 0.5
+        assert abs(obs.width - 11.0) < 0.5
+        assert abs(obs.height - 41.0) < 0.5
+
+    def test_obstacles_empty_when_no_field32(self) -> None:
+        """MapData.from_response returns empty obstacles when field 32 is missing."""
+        decoded = {"2": {"3": 60, "4": 10, "5": 10, "17": b""}}
+        m = MapData.from_response(decoded)
+        assert m.obstacles == []
+
+
+class TestObstacleInfo:
+    """Tests for ObstacleInfo dataclass."""
+
+    def test_display_name_known_type(self) -> None:
+        """ObstacleInfo with type_id=14 has display_name 'Door'."""
+        obs = ObstacleInfo(id=1, type_id=14)
+        assert obs.display_name == "Door"
+
+    def test_display_name_unknown_type(self) -> None:
+        """ObstacleInfo with unknown type_id=99 has display_name 'Object 99'."""
+        obs = ObstacleInfo(id=1, type_id=99)
+        assert obs.display_name == "Object 99"
+
+    def test_display_name_all_known_types(self) -> None:
+        """All known type IDs have correct display names."""
+        expected = {2: "Furniture", 4: "Toilet", 6: "Sink", 14: "Door", 28: "Obstacle"}
+        for type_id, name in expected.items():
+            obs = ObstacleInfo(id=1, type_id=type_id)
+            assert obs.display_name == name
+
+    def test_to_grid_coords(self) -> None:
+        """to_grid_coords subtracts origin correctly."""
+        obs = ObstacleInfo(id=1, type_id=14, center_x=-110.5, center_y=-129.5)
+        gx, gy = obs.to_grid_coords(origin_x=-280, origin_y=-341)
+        assert abs(gx - 169.5) < 0.01
+        assert abs(gy - 211.5) < 0.01
+
+
+class TestParseObstacles:
+    """Tests for _parse_obstacles function."""
+
+    def test_parse_obstacles_list(self) -> None:
+        """_parse_obstacles with bbp-decoded field 32 data returns correct list."""
+        field32 = {
+            "1": [
+                {
+                    "1": 1,
+                    "2": 14,
+                    "3": {"1": {"1": _float_to_uint32(-110.5), "2": _float_to_uint32(-129.5)}, "2": _float_to_uint32(11.0), "3": _float_to_uint32(41.0)},
+                    "4": _float_to_uint32(180.0),
+                },
+                {
+                    "1": 4,
+                    "2": 2,
+                    "3": {"1": {"1": _float_to_uint32(10.0), "2": _float_to_uint32(95.5)}, "2": _float_to_uint32(36.0), "3": _float_to_uint32(29.0)},
+                    "4": _float_to_uint32(180.0),
+                },
+            ],
+        }
+        obstacles = _parse_obstacles(field32)
+        assert len(obstacles) == 2
+        assert obstacles[0].id == 1
+        assert obstacles[0].type_id == 14
+        assert obstacles[0].display_name == "Door"
+        assert abs(obstacles[0].center_x - (-110.5)) < 0.5
+        assert obstacles[1].id == 4
+        assert obstacles[1].type_id == 2
+        assert obstacles[1].display_name == "Furniture"
+
+    def test_parse_obstacles_empty_field32(self) -> None:
+        """_parse_obstacles handles missing/empty field 32 gracefully."""
+        assert _parse_obstacles({}) == []
+        assert _parse_obstacles({"1": []}) == []
+
+    def test_parse_obstacles_single_item_dict(self) -> None:
+        """_parse_obstacles handles single item (dict not list) in field 32.1."""
+        field32 = {
+            "1": {
+                "1": 13,
+                "2": 4,
+                "3": {"1": {"1": _float_to_uint32(-154.0), "2": _float_to_uint32(-55.5)}, "2": _float_to_uint32(13.0), "3": _float_to_uint32(20.0)},
+                "4": _float_to_uint32(90.0),
+            },
+        }
+        obstacles = _parse_obstacles(field32)
+        assert len(obstacles) == 1
+        assert obstacles[0].id == 13
+        assert obstacles[0].type_id == 4
+        assert obstacles[0].display_name == "Toilet"
+
+    def test_parse_obstacles_float32_conversion(self) -> None:
+        """float32 conversion works for coordinate values (uint32 bit patterns)."""
+        # Use known value: -110.5 as uint32 = struct.unpack('I', struct.pack('f', -110.5))[0]
+        field32 = {
+            "1": {
+                "1": 1,
+                "2": 14,
+                "3": {"1": {"1": _float_to_uint32(-110.5), "2": _float_to_uint32(-129.5)}, "2": _float_to_uint32(11.0), "3": _float_to_uint32(41.0)},
+                "4": _float_to_uint32(180.0),
+            },
+        }
+        obstacles = _parse_obstacles(field32)
+        assert len(obstacles) == 1
+        assert abs(obstacles[0].center_x - (-110.5)) < 0.1
+        assert abs(obstacles[0].center_y - (-129.5)) < 0.1
+        assert abs(obstacles[0].width - 11.0) < 0.1
+        assert abs(obstacles[0].height - 41.0) < 0.1
+        assert abs(obstacles[0].angle - 180.0) < 0.1
+
+    def test_parse_obstacles_skips_bad_items(self) -> None:
+        """_parse_obstacles skips non-dict items without crashing."""
+        field32 = {
+            "1": [
+                "not a dict",
+                42,
+                {"1": 1, "2": 28, "3": {"1": {"1": 0.0, "2": 0.0}}},
+            ],
+        }
+        obstacles = _parse_obstacles(field32)
+        assert len(obstacles) == 1
+        assert obstacles[0].type_id == 28
