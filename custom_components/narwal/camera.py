@@ -166,6 +166,10 @@ class NarwalMapCamera(NarwalEntity, Camera):
         if is_cleaning and not was_cleaning:
             _LOGGER.info("New cleaning session — clearing trail")
             self._reset_trail()
+        elif was_cleaning and not is_cleaning:
+            _LOGGER.info("Cleaning ended — clearing vision obstacles")
+            self._vision_obstacles = []
+            state.vision_obstacles.clear()
         if current_status != WorkingStatus.UNKNOWN:
             self._last_cleaning_status = current_status
 
