@@ -25,6 +25,7 @@ _MIN_RENDER_INTERVAL = 2
 # Trail recording (used in both debug and normal modes)
 _TRAIL_MAX_POINTS = 50000  # full cleaning session worth
 _TRAIL_RECORD_INTERVAL = 3  # seconds between trail point recordings
+_VISION_MERGE_RADIUS = 15  # grid-pixels: detections closer than this are one object
 
 # Debug view: blank canvas with robot dot + trail.
 # Set to False to use the real map renderer instead.
@@ -194,13 +195,27 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 if grid_pos is not None:
                     self._record_trail_position(grid_pos[0], grid_pos[1])
 
-            # Accumulate vision obstacles (new detections only, dedup by id)
-            if state.vision_obstacles:
-                existing_ids = {o.id for o in self._vision_obstacles}
+            # Accumulate vision obstacles with spatial clustering.
+            # The robot generates many detection_seqs for the same physical
+            # object across passes.  Merge detections of the same type that
+            # are within _VISION_MERGE_RADIUS grid-pixels of each other.
+            if state.vision_obstacles and static_map:
                 for obs in state.vision_obstacles:
-                    if obs.id not in existing_ids:
+                    gx, gy = obs.to_grid_coords(
+                        static_map.origin_x, static_map.origin_y,
+                    )
+                    merged = False
+                    for existing in self._vision_obstacles:
+                        if existing.label != obs.label:
+                            continue
+                        ex, ey = existing.to_grid_coords(
+                            static_map.origin_x, static_map.origin_y,
+                        )
+                        if (gx - ex) ** 2 + (gy - ey) ** 2 <= _VISION_MERGE_RADIUS ** 2:
+                            merged = True
+                            break
+                    if not merged:
                         self._vision_obstacles.append(obs)
-                        existing_ids.add(obs.id)
 
             static_ts = static_map.created_at or 0
             trail_len = len(self._trail)
