@@ -525,74 +525,50 @@ class TestParseObstacles:
 class TestVisionObstacleInfo:
     """Tests for VisionObstacleInfo dataclass."""
 
-    def test_display_name_known_label(self) -> None:
-        """VisionObstacleInfo with label=5 has display_name 'Shoes'."""
-        obs = VisionObstacleInfo(id=1, label=5, center_x=10.0, center_y=20.0)
-        assert obs.display_name == "Shoes"
+    def test_display_name_cable(self) -> None:
+        """VisionObstacleInfo with label=1 has display_name 'Cable'."""
+        obs = VisionObstacleInfo(id=1, label=1, center_x=10.0, center_y=20.0)
+        assert obs.display_name == "Cable"
+
+    def test_display_name_floor_mirror(self) -> None:
+        """label=4 is 'Floor Mirror' (verified against Narwal app)."""
+        obs = VisionObstacleInfo(id=1, label=4)
+        assert obs.display_name == "Floor Mirror"
 
     def test_display_name_unknown_label(self) -> None:
         """VisionObstacleInfo with unknown label=99 falls back to 'Unknown'."""
         obs = VisionObstacleInfo(id=2, label=99)
         assert obs.display_name == "Unknown"
 
-    def test_display_name_pet_waste(self) -> None:
-        """label=3 is 'Pet Waste' (hazard category)."""
-        obs = VisionObstacleInfo(id=1, label=3)
-        assert obs.display_name == "Pet Waste"
-
-    def test_display_name_cat(self) -> None:
-        """label=41 is 'Cat' (pet category)."""
-        obs = VisionObstacleInfo(id=1, label=41)
-        assert obs.display_name == "Cat"
-
     def test_display_name_type_name_override(self) -> None:
         """type_name from robot overrides TYPE_NAMES lookup."""
         obs = VisionObstacleInfo(id=1, label=5, type_name="Custom Name")
         assert obs.display_name == "Custom Name"
 
-    def test_type_names_coverage_all_42(self) -> None:
-        """TYPE_NAMES has entries for all 42 valid vision obstacle types."""
-        # Type IDs from APK: 1-22, 25-32, 34-42 (IDs 23, 24, 33 missing from APK)
-        expected_ids = set(range(1, 23)) | set(range(25, 33)) | set(range(34, 43))
-        for type_id in expected_ids:
-            assert type_id in VisionObstacleInfo.TYPE_NAMES, (
-                f"Missing TYPE_NAMES entry for label {type_id}"
-            )
+    def test_type_names_confirmed_entries(self) -> None:
+        """TYPE_NAMES has entries for confirmed vision types."""
+        assert 1 in VisionObstacleInfo.TYPE_NAMES  # Cable
+        assert 4 in VisionObstacleInfo.TYPE_NAMES  # Floor Mirror
 
     def test_category_hazard(self) -> None:
-        """label=3 (Pet Waste) is in hazard category."""
+        """label=3 (Obstacle) is in hazard category."""
         obs = VisionObstacleInfo(id=1, label=3)
         assert obs.category == "hazard"
 
-    def test_category_hazard_liquid(self) -> None:
-        """label=4 (Liquid) is in hazard category."""
-        obs = VisionObstacleInfo(id=1, label=4)
-        assert obs.category == "hazard"
-
-    def test_category_hazard_cliff(self) -> None:
-        """label=16 (Drop-off) is in hazard category."""
-        obs = VisionObstacleInfo(id=1, label=16)
-        assert obs.category == "hazard"
-
     def test_category_clothing_shoes(self) -> None:
-        """label=5 (Shoes) is in clothing category."""
-        obs = VisionObstacleInfo(id=1, label=5)
+        """label=2 (Shoes) is in clothing category."""
+        obs = VisionObstacleInfo(id=1, label=2)
         assert obs.category == "clothing"
 
-    def test_category_clothing_socks(self) -> None:
-        """label=7 (Fabric/Socks) is in clothing category."""
-        obs = VisionObstacleInfo(id=1, label=7)
-        assert obs.category == "clothing"
+    def test_category_misc_fallback(self) -> None:
+        """Unmapped labels fall back to misc category."""
+        obs = VisionObstacleInfo(id=1, label=4)
+        assert obs.category == "misc"
 
-    def test_category_pet(self) -> None:
-        """label=41 (Cat) is in pet category."""
-        obs = VisionObstacleInfo(id=1, label=41)
-        assert obs.category == "pet"
-
-    def test_category_pet_toy(self) -> None:
-        """label=37 (Pet Toy) is in pet category."""
-        obs = VisionObstacleInfo(id=1, label=37)
-        assert obs.category == "pet"
+    def test_category_unknown_label(self) -> None:
+        """Unknown labels fall back to misc category."""
+        obs = VisionObstacleInfo(id=1, label=99)
+        assert obs.category == "misc"
 
     def test_category_misc_cable(self) -> None:
         """label=1 (Cable) is in misc category."""
@@ -627,7 +603,7 @@ class TestParseVisionObstacles:
         # Field 9 schema: {1: type_id, 2: detection_seq, 3: unknown, 4: constant, 5: constant}
         field9 = [
             {"1": 1, "2": 101, "3": 1, "4": 1, "5": 2},  # Cable, seq=101
-            {"1": 5, "2": 102, "3": 2, "4": 1, "5": 2},  # Shoes, seq=102
+            {"1": 4, "2": 102, "3": 2, "4": 1, "5": 2},  # Floor Mirror, seq=102
         ]
         decoded = {"9": field9}
         obstacles = _parse_vision_obstacles(decoded)
@@ -635,8 +611,8 @@ class TestParseVisionObstacles:
         assert obstacles[0].label == 1
         assert obstacles[0].display_name == "Cable"
         assert obstacles[0].id == 101
-        assert obstacles[1].label == 5
-        assert obstacles[1].display_name == "Shoes"
+        assert obstacles[1].label == 4
+        assert obstacles[1].display_name == "Floor Mirror"
         assert obstacles[1].id == 102
 
     def test_parse_field9_type_id_zero_unknown(self) -> None:
@@ -725,13 +701,13 @@ class TestParseVisionObstacles:
                     "1": {"_hex": x_hex, "_len": 4},
                     "2": {"_hex": y_hex, "_len": 4},
                 },
-                "2": {"1": 5, "2": 99},  # single detection as dict
+                "2": {"1": 4, "2": 99},  # single detection as dict
             }],
         }
         obstacles = _parse_vision_obstacles(decoded)
         assert len(obstacles) == 1
-        assert obstacles[0].label == 5
-        assert obstacles[0].display_name == "Shoes"
+        assert obstacles[0].label == 4
+        assert obstacles[0].display_name == "Floor Mirror"
         assert abs(obstacles[0].center_x - 7.5) < 0.1
         assert abs(obstacles[0].center_y - (-3.2)) < 0.1
 

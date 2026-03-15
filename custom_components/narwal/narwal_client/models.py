@@ -200,56 +200,24 @@ class VisionObstacleInfo:
     type_name: str = ""      # robot-provided name (may be empty)
     image_data: str = ""     # base64 photo (ignored for map rendering)
 
-    # Full vision obstacle type enum from APK 3d-map.js getModelPath() (lines 33410-33491)
-    # IDs 23, 24, 33 are absent from the APK switch statement.
+    # display_map field 9 vision type enum.
+    # NOTE: This is a DIFFERENT enum from APK getModelPath() (which uses 1-42).
+    # Mapping built from live observation against Narwal app labels.
+    # Confirmed: 1=Cable, 4=Floor Mirror.  Others are best-guess until verified.
     TYPE_NAMES: ClassVar[dict[int, str]] = {
         1: "Cable",
-        2: "Tissue",
-        3: "Pet Waste",
-        4: "Liquid",
-        5: "Shoes",
-        6: "Solid Debris",
-        7: "Fabric",
-        8: "Plastic Bag",
-        9: "Trash Can",
-        10: "Unknown Object",
-        11: "Stain",
-        12: "Fabric",
-        13: "Obstacle",
-        14: "Obstacle",
-        15: "Pet",
-        16: "Drop-off",
-        17: "Squat Toilet",
-        18: "U-Shaped Chair",
-        19: "Office Chair",
-        20: "Floor Mirror",
-        21: "Book",
-        22: "Stick",
-        25: "Valuable Item",
-        26: "Valuable Item",
-        27: "Valuable Item",
-        28: "Valuable Item",
-        29: "Valuable Item",
-        30: "Valuable Item",
-        31: "Valuable Item",
-        32: "Valuable Item",
-        34: "Toy",
-        35: "Plant",
-        36: "Fitness Equipment",
-        37: "Pet Toy",
-        38: "Hazardous Item",
-        39: "Decoration",
-        40: "Box",
-        41: "Cat",
-        42: "Dog",
+        2: "Shoes",
+        3: "Obstacle",
+        4: "Floor Mirror",
+        5: "Fabric",
     }
 
     # Category grouping for color-coded overlay rendering
     # hazard = red-amber, clothing = yellow, pet = orange, misc = amber
     CATEGORIES: ClassVar[dict[str, set[int]]] = {
-        "hazard": {3, 4, 11, 16, 38},
-        "clothing": {5, 7, 12},
-        "pet": {15, 37, 41, 42},
+        "hazard": {3},
+        "clothing": {2, 5},
+        "pet": set(),
     }
 
     @property
