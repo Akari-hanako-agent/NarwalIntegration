@@ -68,8 +68,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — Probe script + live data capture during cleaning (checkpoint)
-- [ ] 11-02-PLAN.md — VisionObstacleInfo model, parsing, overlay rendering, tests, sync
+- [x] 11-01-PLAN.md — Probe script + live data capture during cleaning (checkpoint)
+- [x] 11-02-PLAN.md — VisionObstacleInfo model, parsing, overlay rendering, tests, sync
 
 **Research**: See 11-RESEARCH.md — APK schema confirmed (MapVisionInfo, MapVisionBox, 42-type enum). Data source needs live probing during clean.
 
@@ -106,4 +106,4 @@ Plans:
 | 0-8 (v0.5) | Complete | 2026-03-08 |
 | 9. Room-Specific Cleaning | Complete | 2026-03-08 |
 | 10. Obstacle Mapping | Complete | 2026-03-09 |
-| 11. Vision Obstacles | 2/2 | Complete   | 2026-03-15 | 12. Camera & Patrol | Not started (research needed) | - |
+| 11. Vision Obstacles | 2/2 | Complete    | 2026-03-15 | 12. Camera & Patrol | Not started (research needed) | - |
