@@ -308,7 +308,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                                 static_map.compressed_map, static_map.width, static_map.height,
                                 int(static_map.dock_x), int(static_map.dock_y),
                             )
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             "POSITION DIAG: robot_raw=(%.2f, %.2f) robot_grid=(%.1f, %.1f) robot_room=%s(id=%d) "
                             "| dock_ref_raw=(%.2f, %.2f) dock_ref_grid=(%.1f, %.1f) "
                             "| static_dock_grid=(%.1f, %.1f) dock_room=%s(id=%d) "
@@ -324,7 +324,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                             static_map.width, static_map.height,
                         )
                     except Exception:
-                        _LOGGER.exception("POSITION DIAG failed")
+                        _LOGGER.debug("POSITION DIAG failed", exc_info=True)
 
         trail = list(self._trail) if self._trail else None
 

@@ -12,7 +12,7 @@ This integration uses a **local WebSocket connection on port 9002**. Only models
 |-------|--------|-------|
 | **Narwal Flow** (AX12) | **Working** | Primary development target |
 | **Freo Z10 Ultra** (CX4) | **Working** | Community confirmed |
-| **Freo Z Ultra** | **Investigating** | Port 9002 open; needs product key ([#5](https://github.com/sjmotew/NarwalIntegration/issues/5)) |
+| **Freo Z Ultra** (CX7) | **Not Compatible** | Port 9002 open but no local broadcasts; cloud-only ([#5](https://github.com/sjmotew/NarwalIntegration/issues/5)) |
 | **Freo X Ultra** (AX18/AX19) | **Not Compatible** | Uses ZeroMQ (port 6789) + Tuya cloud, not WebSocket ([#4](https://github.com/sjmotew/NarwalIntegration/issues/4)) |
 | **Freo X Plus** | **Not Compatible** | Cloud-only — no local API |
 | **Narwal J1** | **Not Compatible** | HTTP-only on port 8080 |
