@@ -8,7 +8,7 @@
 - 🗃️ **Phase 11: Vision Obstacles** — ARCHIVED (raw AI stream unusable for map overlay)
 - 📋 **Phase 12: Camera & Patrol** — Snapshot capture, patrol/cruise, LED control, live feed RE
 - 📋 **Phase 13: Community Fixes & Multi-Model** — Critical bug fixes, X10 Pro support, room clean investigation
-- 📋 **Phase 14: Shortcuts & Presets** — App shortcut execution via HA automations
+- 🗃️ **Phase 14: Shortcuts & Presets** — ARCHIVED (cloud-only, not accessible via local WS API)
 
 ## Phases
 
@@ -117,29 +117,35 @@ Plans:
   4. Product key annotations updated (AX15 = X10 Pro confirmed)
   5. README compatibility table updated with X10 Pro
 **Requirements:** [FIX-01, FIX-02, FIX-03]
-**Plans:** TBD
+**Plans:** 1 plan
 
 Plans:
 - [x] 13-01-PLAN.md — X10 Pro model support (FIX-02), room clean error logging (FIX-03); FIX-01 pre-committed
 
 Issues:
-- #11 — `last_seen_segments` AttributeError crashes listener (HIGH — breaks Z10 Ultra)
+- #11 — `last_seen_segments` AttributeError crashes listener (HIGH — breaks Z10 Ultra) -- FIXED (ba53ddb)
 - #12 — X10 Pro product key confirmed (CNbforyZWI = AX15), needs config flow + naming
 - #10 — Room clean returns CONFLICT or ignores room selection (needs investigation)
 
-### 📋 Phase 14: Shortcuts & Presets (Backlog)
+### 🗃️ Phase 14: Shortcuts & Presets — ARCHIVED
 
-**Goal**: Allow users to trigger Narwal app "Shutcut" presets or custom cleaning configurations via HA automations
-**Depends on**: Phase 9 (room cleaning), APK RE for shortcut topic format
-**Success Criteria**:
-  1. User can trigger named cleaning presets from HA dashboard or automation
-  2. Presets support room list, fan mode, mop mode, pass count
-**Requirements:** [SHORT-01]
-**Plans:** TBD
+**Goal**: Discover and expose Narwal app "Shutcut" presets via HA select entity + execute service, enabling automation of robot-stored cleaning configurations
+**Outcome**: ARCHIVED — Shortcuts are cloud-managed (Alibaba Alink IoT REST APIs), not exposed via local WebSocket API on port 9002. Probed 8 topic candidates; all shortcut-specific topics timed out, general config/feature topics contain no shortcut data. The feature exists in the Narwal app but definitions and execution are routed through cloud infrastructure.
+**Plans:** 2 plans (01 partially executed, 02 not started)
+
+Plans:
+- [x] 14-01-PLAN.md — Probe robot for shortcut WS topics (discovery) — **cloud-only confirmed**
+- [ ] 14-02-PLAN.md — ShortcutInfo model + SelectEntity — NOT EXECUTED (no local data source)
+
+**Key findings**:
+- `shortcut/get`, `clean/shortcut/get`, `robot/shortcut/get` all timeout (topics don't exist)
+- `config/get` and `common/get_feature_list` return no shortcut fields
+- `clean/cur_plan/get` returns current cleaning plan (per-room MapCleanParamInfo) — room-specific cleaning via Phase 9 already covers this use case
+- APK `NrRobotShortcutListGetRequester` confirms cloud REST path
+- Shortcuts feature exists in app (user-created presets) but is cloud-only
 
 Issues:
-- #13 — Feature request from @ShifuSonny (Flow user)
-- May require APK RE to find shortcut storage/retrieval topics, or build HA-side preset system
+- #13 — Feature request from @ShifuSonny (Flow user) — findings posted
 
 ## Progress
 
@@ -152,5 +158,5 @@ Issues:
 | 10. Obstacle Mapping | Complete | 2026-03-09 |
 | 11. Vision Obstacles | ARCHIVED | 2026-03-15 |
 | 12. Camera & Patrol | In Progress (plan 01 done) | - |
-| 13. Community Fixes & Multi-Model | In Progress (plan 01 done) | - |
-| 14. Shortcuts & Presets | Backlog | - |
+| 13. Community Fixes & Multi-Model | Complete | 2026-04-01 |
+| 14. Shortcuts & Presets | ARCHIVED | 2026-04-01 |

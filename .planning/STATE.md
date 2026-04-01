@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.5
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-04-01T19:43:49.103Z"
-last_activity: 2026-03-16 — Take Photo button, Camera Light switch, NarwalSnapshotCamera, narwal.take_snapshot service
+status: Phase 14 ARCHIVED (cloud-only)
+stopped_at: Phase 14 archived after probe confirmed shortcuts are cloud-only
+last_updated: "2026-04-02T00:10:00.000Z"
+last_activity: 2026-04-01 -- Phase 14 archived (shortcuts cloud-only, not local WS)
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 5
-  percent: 92
+  total_phases: 8
+  completed_phases: 7
+  total_plans: 15
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State
@@ -21,13 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Users can control and monitor their Narwal Flow vacuum entirely locally — start/stop/pause, see status, view a live floor map — without any cloud dependency.
-**Current focus:** Phase 13 Plan 01 COMPLETE — X10 Pro model support, improved room clean error logging
+**Current focus:** Phase 14 ARCHIVED — shortcuts cloud-only, no local WS API access
 
 ## Current Position
 
-Phase: 13 of 13 — IN PROGRESS (Community Fixes & Multi-model)
-Plan: 01 of ? — Complete (X10 Pro support + room clean logging)
-Last activity: 2026-04-01 — X10 Pro config flow entry, CommandResult named logging with guidance text
+Phase: 14 (shortcuts-presets) — ARCHIVED
+Last activity: 2026-04-01 -- Probe confirmed shortcuts are cloud-managed (Alibaba Alink IoT REST), not local WS
 
 Progress: [██████████] 100% (13 plans done)
 
