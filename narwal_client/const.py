@@ -33,7 +33,7 @@ KNOWN_PRODUCT_KEYS = [
     "tPQJmoIbEC",   # AX6  (APK, contributed by @northwestsupra)
     "HgArZ7KuJL",   # AX7  (APK, contributed by @northwestsupra)
     "Uuug39n0fD",   # AX8  (APK, contributed by @northwestsupra)
-    "CNbforyZWI",   # AX15
+    "CNbforyZWI",   # AX15 — Freo X10 Pro (confirmed by @jlowen07)
     "E9Q8aDzUbp",   # AX17
     "jI5rHi4mKa",   # AX24
     "UuTSLsMce4",   # AX25

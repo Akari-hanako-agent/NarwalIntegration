@@ -16,6 +16,7 @@ MODEL = "Flow (AX12)"
 NARWAL_MODELS: dict[str, str] = {
     "Narwal Flow": "QoEsI5qYXO",
     "Narwal Freo Z10 Ultra": "DrzDKQ0MU8",
+    "Narwal Freo X10 Pro": "CNbforyZWI",
     "Other / Auto-detect": "auto",
 }
 
