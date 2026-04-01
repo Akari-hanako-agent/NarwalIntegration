@@ -7,6 +7,8 @@
 - 📋 **Phase 10: Obstacle Mapping** — Furniture/object detection on map
 - 🗃️ **Phase 11: Vision Obstacles** — ARCHIVED (raw AI stream unusable for map overlay)
 - 📋 **Phase 12: Camera & Patrol** — Snapshot capture, patrol/cruise, LED control, live feed RE
+- 📋 **Phase 13: Community Fixes & Multi-Model** — Critical bug fixes, X10 Pro support, room clean investigation
+- 📋 **Phase 14: Shortcuts & Presets** — App shortcut execution via HA automations
 
 ## Phases
 
@@ -102,9 +104,43 @@ Plans:
 
 **Note**: Live video streaming uses Agora P2P via cloud auth (Alibaba IoT REST APIs). PIN auth is cloud-side for live stream only — snapshot and patrol features appear to be separate local commands.
 
+**Update (2026-04-01)**: @northwestsupra shared full APK decompilation (v2.6.81) including .proto files — critical for AES snapshot decryption research in plan 12-02.
+
+### 📋 Phase 13: Community Fixes & Multi-Model
+
+**Goal**: Fix critical bugs reported by community, add X10 Pro model support, investigate room cleaning issues
+**Depends on**: Phase 9 (room cleaning), Phase 12 (current)
+**Success Criteria**:
+  1. Z10 Ultra `last_seen_segments` crash fixed — listener no longer crashes (#11)
+  2. Freo X10 Pro recognized in config flow with correct naming (#12)
+  3. Room clean CONFLICT (code=3) root cause identified and documented (#10)
+  4. Product key annotations updated (AX15 = X10 Pro confirmed)
+  5. README compatibility table updated with X10 Pro
+**Requirements:** [FIX-01, FIX-02, FIX-03]
+**Plans:** TBD
+
+Issues:
+- #11 — `last_seen_segments` AttributeError crashes listener (HIGH — breaks Z10 Ultra)
+- #12 — X10 Pro product key confirmed (CNbforyZWI = AX15), needs config flow + naming
+- #10 — Room clean returns CONFLICT or ignores room selection (needs investigation)
+
+### 📋 Phase 14: Shortcuts & Presets (Backlog)
+
+**Goal**: Allow users to trigger Narwal app "Shutcut" presets or custom cleaning configurations via HA automations
+**Depends on**: Phase 9 (room cleaning), APK RE for shortcut topic format
+**Success Criteria**:
+  1. User can trigger named cleaning presets from HA dashboard or automation
+  2. Presets support room list, fan mode, mop mode, pass count
+**Requirements:** [SHORT-01]
+**Plans:** TBD
+
+Issues:
+- #13 — Feature request from @ShifuSonny (Flow user)
+- May require APK RE to find shortcut storage/retrieval topics, or build HA-side preset system
+
 ## Progress
 
-**Execution Order:** Phase 9 → Phase 10 → Phase 11 → Phase 12
+**Execution Order:** Phase 9 → Phase 10 → Phase 11 → Phase 12 → Phase 13 → Phase 14
 
 | Phase | Status | Completed |
 |-------|--------|-----------|
@@ -112,4 +148,6 @@ Plans:
 | 9. Room-Specific Cleaning | Complete | 2026-03-08 |
 | 10. Obstacle Mapping | Complete | 2026-03-09 |
 | 11. Vision Obstacles | ARCHIVED | 2026-03-15 |
-| 12. Camera & Patrol | Planned (2 plans) | - |
+| 12. Camera & Patrol | In Progress (plan 01 done) | - |
+| 13. Community Fixes & Multi-Model | Planned | - |
+| 14. Shortcuts & Presets | Backlog | - |

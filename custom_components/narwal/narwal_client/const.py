@@ -21,21 +21,33 @@ DEFAULT_TOPIC_PREFIX = "/QoEsI5qYXO"
 # the robot responds. Once it does, the correct prefix is locked in.
 # Order: confirmed working models first, then unverified keys.
 KNOWN_PRODUCT_KEYS = [
+    # Confirmed working (local WebSocket)
     "QoEsI5qYXO",  # AX12 — Narwal Flow (primary, confirmed)
     "DrzDKQ0MU8",   # CX4  — Freo Z10 Ultra (confirmed by @irekkl-maker)
+    # Confirmed cloud-only (port 9002 open but no local broadcasts)
+    "BYWBPqSxeC",   # CX7  — Freo Z Ultra (cloud-only, confirmed by @gabrielozcomidi)
+    # Confirmed cloud-only (ZeroMQ port 6789, no WebSocket)
+    "LnugwMG9ss",   # AX18 — Freo X Ultra (cloud-only, confirmed by @ManivannanBA)
+    "5OMbqk58Sc",   # AX19 — Freo X Ultra
+    # From APK analysis (unverified — model compatibility unknown)
+    "tPQJmoIbEC",   # AX6  (APK, contributed by @northwestsupra)
+    "HgArZ7KuJL",   # AX7  (APK, contributed by @northwestsupra)
+    "Uuug39n0fD",   # AX8  (APK, contributed by @northwestsupra)
     "CNbforyZWI",   # AX15
     "E9Q8aDzUbp",   # AX17
-    "LnugwMG9ss",   # AX18 — Freo X Ultra?
-    "5OMbqk58Sc",   # AX19 — Freo X Ultra?
     "jI5rHi4mKa",   # AX24
     "UuTSLsMce4",   # AX25
     "qV6BujoYLz",   # AX26
-    "88OLXLpkjT",   # BX4
+    "88OLXLpkjT",   # BX4  (note: APK also has 3rIGshGNAj — may vary by FW revision)
+    "3rIGshGNAj",   # BX4/Y1 alternate key (APK, contributed by @northwestsupra)
     "7sSZZ4XfTI",   # CX2
-    "OlkUn3oUCu",   # CX3
-    "BYWBPqSxeC",   # CX7
+    "OlkUn3oUCu",   # CX3 / CX3Pure
     "mvlduyye85",   # X30
     "pcbfh2ldvx",   # X31
+    "EHf6cRNRGT",   # J4 / J4Pure (APK, contributed by @northwestsupra)
+    "6NjIDYxBXb",   # J4Lite (APK, contributed by @northwestsupra)
+    "hEA7OEshlx",   # J5  (APK, contributed by @northwestsupra)
+    "cUlfJN5JYP",   # Unknown model (APK, contributed by @northwestsupra)
 ]
 
 # --- Status topics (robot → client, field 4 / 0x22 frames) ---

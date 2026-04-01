@@ -15,7 +15,7 @@ This integration uses a **local WebSocket connection on port 9002**. Only models
 | **Freo Z Ultra** (CX7) | **Not Compatible** | Port 9002 open but no local broadcasts; cloud-only ([#5](https://github.com/sjmotew/NarwalIntegration/issues/5)) |
 | **Freo X Ultra** (AX18/AX19) | **Not Compatible** | Uses ZeroMQ (port 6789) + Tuya cloud, not WebSocket ([#4](https://github.com/sjmotew/NarwalIntegration/issues/4)) |
 | **Freo X Plus** | **Not Compatible** | Cloud-only — no local API |
-| **Narwal J1** | **Not Compatible** | HTTP-only on port 8080 |
+| **Narwal J-series** (J1/J4/J5) | **Not Compatible** | J1: HTTP-only (port 8080); J4/J5: cloud-only (Tuya) |
 
 Models marked **Not Compatible** use a different protocol or are cloud-only. This is a hardware/firmware limitation.
 
