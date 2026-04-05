@@ -54,19 +54,45 @@ def _make_vacuum(state: NarwalState | None = None) -> NarwalVacuum:
 class TestAsyncGetSegments:
     """Tests for async_get_segments."""
 
-    async def test_no_state_returns_empty(self) -> None:
-        """Returns [] when coordinator.data is None."""
+    async def test_no_state_no_cache_returns_empty(self) -> None:
+        """Returns [] when coordinator.data is None and no cached segments."""
         vac = _make_vacuum(state=None)
         result = await vac.async_get_segments()
         assert result == []
 
-    async def test_no_map_data_returns_empty(self) -> None:
-        """Returns [] when state.map_data is None."""
+    async def test_no_map_data_no_cache_returns_empty(self) -> None:
+        """Returns [] when state.map_data is None and no cached segments."""
         state = NarwalState()
         state.map_data = None
         vac = _make_vacuum(state=state)
         result = await vac.async_get_segments()
         assert result == []
+
+    async def test_no_state_returns_cached_segments(self) -> None:
+        """Falls back to last_seen_segments when coordinator.data is None."""
+        vac = _make_vacuum(state=None)
+        cached = [Segment(id="7", name="Lavanderia", group="Rooms")]
+        vac.last_seen_segments = cached
+        result = await vac.async_get_segments()
+        assert len(result) == 1
+        assert result[0].id == "7"
+        assert result[0].name == "Lavanderia"
+
+    async def test_no_map_data_returns_cached_segments(self) -> None:
+        """Falls back to last_seen_segments when map_data is None (robot sleeping)."""
+        state = NarwalState()
+        state.map_data = None
+        vac = _make_vacuum(state=state)
+        cached = [
+            Segment(id="1", name="Living Room", group="Rooms"),
+            Segment(id="2", name="Kitchen", group="Rooms"),
+        ]
+        vac.last_seen_segments = cached
+        result = await vac.async_get_segments()
+        assert len(result) == 2
+        ids = [s.id for s in result]
+        assert "1" in ids
+        assert "2" in ids
 
     async def test_returns_segments_from_rooms(self) -> None:
         """Returns Segment objects for each room with room_id > 0."""

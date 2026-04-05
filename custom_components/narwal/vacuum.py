@@ -187,14 +187,18 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
 
         Maps RoomInfo from get_map to HA Segment objects.
         Room names match the Narwal app exactly (RoomInfo.display_name).
-        Returns [] when map data is not yet loaded (robot asleep at startup)
-        or when HA < 2026.3 (Segment class unavailable).
+        Falls back to HA-cached last_seen_segments when map data is not yet
+        loaded (robot asleep at startup), so clean_area works without waking
+        the robot first.
+        Returns [] when HA < 2026.3 (Segment class unavailable).
         """
         if Segment is None:
             return []
         state = self.coordinator.data
         if state is None or state.map_data is None:
-            return []
+            # Robot sleeping — return cached segments so clean_area still works
+            last = getattr(self, "last_seen_segments", None)
+            return list(last) if last else []
         return [
             Segment(
                 id=str(room.room_id),
