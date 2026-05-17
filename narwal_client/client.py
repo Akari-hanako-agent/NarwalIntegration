@@ -902,18 +902,61 @@ class NarwalClient:
     # start() falls back to the v2 room-list schema. See issue #36.
     _DEFAULT_CLEAN_PAYLOAD = bytes.fromhex("0a0e12002a0a0a060803100218012a00")
 
+    # Flow firmware threshold at which the legacy clean payload was either
+    # rejected (NOT_APPLICABLE) or silently ignored — ack-and-clean-shortcut.
+    # Confirmed-affected firmwares from issues:
+    #   v01.07.22.00 (#36, ralong777) — NOT_APPLICABLE
+    #   v01.08.00.07 (#37, saeft2003) — suspected ack-and-ignore
+    # At or above this version, skip the legacy attempt and send v2 directly.
+    _V2_REQUIRED_FIRMWARE = (1, 7, 22, 0)
+
+    @staticmethod
+    def _parse_firmware_version(version: str) -> tuple[int, int, int, int] | None:
+        """Parse a 'vMM.mm.bb.pp' firmware string into a comparable tuple.
+
+        Returns None for empty/unrecognized strings so callers can fall back
+        to default behavior rather than guess wrong.
+        """
+        if not version:
+            return None
+        s = version.lstrip("vV").strip()
+        parts = s.split(".")
+        if len(parts) < 2:
+            return None
+        try:
+            nums = tuple(int(p) for p in parts[:4])
+        except ValueError:
+            return None
+        # Pad to 4 components so comparisons line up
+        return nums + (0,) * (4 - len(nums))
+
+    def _firmware_requires_v2(self) -> bool:
+        """True if the cached firmware version is at or above the v2 threshold.
+
+        Returns False when firmware is unknown — safer to attempt legacy
+        first and fall back on NOT_APPLICABLE than to send v2 to a robot
+        that may not accept it.
+        """
+        parsed = self._parse_firmware_version(self.state.firmware_version)
+        if parsed is None:
+            return False
+        return parsed >= self._V2_REQUIRED_FIRMWARE
+
     async def start(self, **kwargs) -> CommandResponse:
         """Start whole-house cleaning.
 
-        Tries the legacy minimal payload first (works on Flow firmware
-        < v01.07.22). If the robot returns NOT_APPLICABLE — observed on
-        firmware v01.07.22.00 in issue #36 — falls back to the v2 schema
-        that includes an explicit room list, mirroring what the Narwal
-        app sends on newer firmware.
+        Selection strategy:
+          - If firmware >= v01.07.22 (known to require v2 — see #36, #37),
+            skip the legacy attempt and send v2 directly.
+          - Otherwise try the legacy minimal payload first; if the robot
+            returns NOT_APPLICABLE, fall back to the v2 schema.
 
-        The v2 fallback requires the map to be loaded (get_map called)
-        so we know which rooms to include.
+        The v2 path requires the map to be loaded (get_map called) so we
+        know which rooms to include.
         """
+        if self._firmware_requires_v2():
+            return await self._start_v2(reason="firmware-known-v2")
+
         resp = await self.send_command(
             TOPIC_CMD_START_CLEAN,
             payload=self._DEFAULT_CLEAN_PAYLOAD,
@@ -922,25 +965,41 @@ class NarwalClient:
         if resp.result_code != CommandResult.NOT_APPLICABLE:
             return resp
 
-        # Legacy payload rejected — likely newer firmware. Need the room
-        # list from the cached map to build a v2 payload.
+        return await self._start_v2(reason="legacy-NOT_APPLICABLE", fallback=resp)
+
+    async def _start_v2(
+        self, reason: str, fallback: CommandResponse | None = None
+    ) -> CommandResponse:
+        """Send whole-house v2 clean payload using all cached map rooms.
+
+        Args:
+            reason: Why v2 was chosen — surfaced in logs.
+            fallback: Response to return if no map rooms are cached. Used
+                when this is invoked as a NOT_APPLICABLE retry so the
+                original error bubbles up cleanly.
+        """
         if not (self.state.map_data and self.state.map_data.rooms):
-            _LOGGER.warning(
-                "start() got NOT_APPLICABLE and no map rooms cached; "
-                "cannot build v2 payload. Call get_map() first."
+            msg = (
+                "start() needs v2 payload (%s) but no map rooms cached; "
+                "call get_map() first."
             )
-            return resp
+            _LOGGER.warning(msg, reason)
+            return fallback if fallback is not None else CommandResponse(
+                result_code=CommandResult.NOT_APPLICABLE
+            )
 
         room_ids = [r.room_id for r in self.state.map_data.rooms if r.room_id]
         if not room_ids:
             _LOGGER.warning(
-                "start() got NOT_APPLICABLE but cached map has 0 rooms with IDs"
+                "start() needs v2 payload (%s) but cached map has 0 room IDs",
+                reason,
             )
-            return resp
+            return fallback if fallback is not None else CommandResponse(
+                result_code=CommandResult.NOT_APPLICABLE
+            )
 
         _LOGGER.info(
-            "start(): legacy payload rejected, retrying with v2 schema (%d rooms)",
-            len(room_ids),
+            "start(): using v2 schema (%s, %d rooms)", reason, len(room_ids)
         )
         payload = self._build_clean_payload_v2(room_ids)
         return await self.send_command(
@@ -1134,21 +1193,19 @@ class NarwalClient:
     ) -> CommandResponse:
         """Start room-specific cleaning.
 
-        Sends clean/plan/start with the user-selected rooms. Tries the
-        legacy flat-room schema first (works on Flow firmware < v01.07.22),
-        falling back to the v2 nested-room schema on NOT_APPLICABLE — same
-        firmware-schema mismatch as #36 and #37.
-
-        Issue #37 reports that some newer firmwares accept the legacy
-        topic with SUCCESS but silently ignore the room list, falling back
-        to the first Narwal-app shortcut. For those, callers can pass
-        force_v2=True to skip the legacy attempt.
+        Selection strategy:
+          - force_v2=True: send v2 schema directly (escape hatch for
+            firmwares that ack legacy with SUCCESS but ignore the room
+            list — observed in #37).
+          - Firmware >= v01.07.22 (known to require v2 per #36, #37):
+            send v2 directly.
+          - Otherwise: send legacy flat-room schema first; on
+            NOT_APPLICABLE, retry with v2.
 
         Args:
             room_ids: List of room IDs from RoomInfo.room_id.
-            force_v2: Skip the legacy schema and send v2 directly. Set this
-                when the legacy schema returns SUCCESS but the wrong rooms
-                actually clean (firmware ack-but-ignore behavior).
+            force_v2: Skip both the version check and the legacy attempt;
+                send v2 directly.
 
         Returns:
             CommandResponse with result code from whichever schema landed.
@@ -1156,10 +1213,12 @@ class NarwalClient:
         if not room_ids:
             return await self.start()
 
-        if force_v2:
+        use_v2_directly = force_v2 or self._firmware_requires_v2()
+        if use_v2_directly:
+            reason = "force_v2" if force_v2 else "firmware-known-v2"
             _LOGGER.info(
-                "start_rooms(force_v2=True): sending v2 schema (%d rooms)",
-                len(room_ids),
+                "start_rooms(): using v2 schema (%s, %d rooms)",
+                reason, len(room_ids),
             )
             payload = self._build_clean_payload_v2(room_ids)
             return await self.send_command(

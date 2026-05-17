@@ -193,3 +193,116 @@ class TestStartLegacyAndV2Fallback:
 
         mock_send.assert_awaited_once()
         assert result.result_code == CommandResult.NOT_APPLICABLE
+
+
+class TestFirmwareVersionParser:
+    """Tests for firmware-version parsing + the v2-required check."""
+
+    def test_parse_typical_version(self) -> None:
+        assert NarwalClient._parse_firmware_version("v01.07.22.00") == (1, 7, 22, 0)
+        assert NarwalClient._parse_firmware_version("v01.08.00.07") == (1, 8, 0, 7)
+
+    def test_parse_without_v_prefix(self) -> None:
+        assert NarwalClient._parse_firmware_version("01.07.22.00") == (1, 7, 22, 0)
+
+    def test_parse_short_version_pads_with_zeros(self) -> None:
+        assert NarwalClient._parse_firmware_version("v1.7") == (1, 7, 0, 0)
+        assert NarwalClient._parse_firmware_version("v1.7.22") == (1, 7, 22, 0)
+
+    def test_parse_empty_or_garbage_returns_none(self) -> None:
+        assert NarwalClient._parse_firmware_version("") is None
+        assert NarwalClient._parse_firmware_version("unknown") is None
+        assert NarwalClient._parse_firmware_version("v01.abc.22.00") is None
+
+    def test_firmware_requires_v2_known_affected(self) -> None:
+        """Issues #36 and #37 firmwares both trip the v2 requirement."""
+        client = NarwalClient("127.0.0.1")
+        client.state.firmware_version = "v01.07.22.00"  # #36
+        assert client._firmware_requires_v2()
+        client.state.firmware_version = "v01.08.00.07"  # #37
+        assert client._firmware_requires_v2()
+
+    def test_firmware_requires_v2_older_firmware(self) -> None:
+        """Older firmware that's known to work with legacy schema."""
+        client = NarwalClient("127.0.0.1")
+        client.state.firmware_version = "v01.07.21.99"
+        assert not client._firmware_requires_v2()
+        client.state.firmware_version = "v01.02.19.02"
+        assert not client._firmware_requires_v2()
+
+    def test_firmware_requires_v2_unknown_defaults_to_legacy(self) -> None:
+        """Unknown/empty firmware defaults False so we try legacy first."""
+        client = NarwalClient("127.0.0.1")
+        client.state.firmware_version = ""
+        assert not client._firmware_requires_v2()
+
+
+class TestStartVersionBasedV2Selection:
+    """Tests that start() / start_rooms() skip legacy when firmware is
+    known to require v2."""
+
+    def _connected_client(self, firmware: str) -> NarwalClient:
+        client = NarwalClient("127.0.0.1")
+        client._ws = AsyncMock()
+        client._connected = True
+        client.state.firmware_version = firmware
+        client.state.map_data = MapData(rooms=[
+            RoomInfo(room_id=11),
+            RoomInfo(room_id=14),
+        ])
+        return client
+
+    def test_start_skips_legacy_when_firmware_known_v2(self) -> None:
+        """Flow on v01.08.x sends v2 directly, no legacy probe."""
+        client = self._connected_client("v01.08.00.07")
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            asyncio.get_event_loop().run_until_complete(client.start())
+
+        mock_send.assert_awaited_once()
+        payload = mock_send.await_args.kwargs.get("payload")
+        assert payload != client._DEFAULT_CLEAN_PAYLOAD, (
+            "Should skip legacy and send v2 directly on known-v2 firmware"
+        )
+
+    def test_start_rooms_skips_legacy_when_firmware_known_v2(self) -> None:
+        """Same shortcut for start_rooms()."""
+        client = self._connected_client("v01.07.22.00")
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            asyncio.get_event_loop().run_until_complete(
+                client.start_rooms([5, 7])
+            )
+
+        mock_send.assert_awaited_once()
+        # Verify rooms 5 and 7 in v2 payload
+        import blackboxprotobuf
+        payload = mock_send.await_args.kwargs.get("payload")
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        entries = decoded["1"]["2"]
+        assert [e["1"]["2"] for e in entries] == [5, 7]
+
+    def test_start_rooms_unknown_firmware_uses_legacy_with_fallback(self) -> None:
+        """Empty firmware keeps the conservative legacy-first behavior."""
+        client = self._connected_client("")
+        not_applicable = CommandResponse(result_code=CommandResult.NOT_APPLICABLE)
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.side_effect = [not_applicable, success]
+            asyncio.get_event_loop().run_until_complete(
+                client.start_rooms([5])
+            )
+
+        # Two calls: legacy first, then v2 fallback
+        assert mock_send.await_count == 2
