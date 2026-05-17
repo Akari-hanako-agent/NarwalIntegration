@@ -893,26 +893,158 @@ class NarwalClient:
         """Trigger locate sound — robot says 'Robot is here'."""
         return await self.send_command(TOPIC_CMD_YELL)
 
-    # Default clean task payload — derived from field 48 of robot_base_status
-    # during active cleaning (captured from Narwal app session 2026-03-07).
+    # Legacy clean task payload — works on Flow firmware < v01.07.22.
     # Structure: {1: {2: {}, 5: {1: {1: 3, 2: 2, 3: 1}, 5: {}}}}
     #   field 5.1.1 = suction level (3=max)
     #   field 5.1.2 = mop humidity (2=wet)
     #   field 5.1.3 = passes (1=single)
+    # On firmware v01.07.22+ (Flow), this returns NOT_APPLICABLE and
+    # start() falls back to the v2 room-list schema. See issue #36.
     _DEFAULT_CLEAN_PAYLOAD = bytes.fromhex("0a0e12002a0a0a060803100218012a00")
 
     async def start(self, **kwargs) -> CommandResponse:
-        """Start cleaning.
+        """Start whole-house cleaning.
 
-        Sends clean/plan/start with the default clean task payload.
-        Empty payload returns NOT_APPLICABLE — the robot requires a
-        CleanTask protobuf specifying suction, mop, and pass settings.
+        Tries the legacy minimal payload first (works on Flow firmware
+        < v01.07.22). If the robot returns NOT_APPLICABLE — observed on
+        firmware v01.07.22.00 in issue #36 — falls back to the v2 schema
+        that includes an explicit room list, mirroring what the Narwal
+        app sends on newer firmware.
+
+        The v2 fallback requires the map to be loaded (get_map called)
+        so we know which rooms to include.
         """
-        return await self.send_command(
+        resp = await self.send_command(
             TOPIC_CMD_START_CLEAN,
             payload=self._DEFAULT_CLEAN_PAYLOAD,
             timeout=10.0,
         )
+        if resp.result_code != CommandResult.NOT_APPLICABLE:
+            return resp
+
+        # Legacy payload rejected — likely newer firmware. Need the room
+        # list from the cached map to build a v2 payload.
+        if not (self.state.map_data and self.state.map_data.rooms):
+            _LOGGER.warning(
+                "start() got NOT_APPLICABLE and no map rooms cached; "
+                "cannot build v2 payload. Call get_map() first."
+            )
+            return resp
+
+        room_ids = [r.room_id for r in self.state.map_data.rooms if r.room_id]
+        if not room_ids:
+            _LOGGER.warning(
+                "start() got NOT_APPLICABLE but cached map has 0 rooms with IDs"
+            )
+            return resp
+
+        _LOGGER.info(
+            "start(): legacy payload rejected, retrying with v2 schema (%d rooms)",
+            len(room_ids),
+        )
+        payload = self._build_clean_payload_v2(room_ids)
+        return await self.send_command(
+            TOPIC_CMD_START_CLEAN, payload=payload, timeout=10.0,
+        )
+
+    def _build_clean_payload_v2(
+        self,
+        room_ids: list[int],
+        suction: int = 3,
+        mop_humidity: int = 2,
+        passes: int = 1,
+        clean_mode: int = 3,
+    ) -> bytes:
+        """Build clean task payload using the v2 schema (firmware v01.07.22+).
+
+        Observed in issue #36 from a Flow on firmware v01.07.22.00.
+        Each room entry uses a nested room_id (different from the flat
+        schema in _build_room_clean_payload used for room-targeted cleans
+        on older firmware):
+
+            {
+              1: {1: 1, 2: <room_id>},                # nested room ref
+              2: {1: <suction>, 2: <clean_mode>,      # per-room params
+                  3: <passes>, 7: <mop_humidity>},
+              3: <sequence>,                          # 1-indexed
+            }
+
+        Outer envelope:
+            {1: {1: 1, 2: [<rooms>], 3: {}, 5: 6}}
+
+        Defaults match a normal whole-house clean: max Flow 1 suction (3),
+        sweep+mop (3 in v2 schema), single pass, wet mop.
+
+        Args:
+            room_ids: List of room IDs from RoomInfo.room_id.
+            suction: 1-3 (Flow 1) / 1-4 (Flow 2). Default 3 = max for Flow 1.
+            mop_humidity: 1=dry, 2=wet, 3=very wet. Default 2.
+            passes: Number of passes. Default 1.
+            clean_mode: v2 schema cleanMode (3 observed for sweep+mop).
+
+        Returns:
+            Encoded protobuf bytes for clean/plan/start.
+        """
+        import blackboxprotobuf
+
+        room_entries = [
+            {
+                "1": {"1": 1, "2": rid},
+                "2": {
+                    "1": suction,
+                    "2": clean_mode,
+                    "3": passes,
+                    "7": mop_humidity,
+                },
+                "3": idx + 1,
+            }
+            for idx, rid in enumerate(room_ids)
+        ]
+
+        room_entry_typedef = {
+            "type": "message",
+            "seen_repeated": True,
+            "message_typedef": {
+                "1": {
+                    "type": "message",
+                    "message_typedef": {
+                        "1": {"type": "int"},
+                        "2": {"type": "uint"},
+                    },
+                },
+                "2": {
+                    "type": "message",
+                    "message_typedef": {
+                        "1": {"type": "int"},
+                        "2": {"type": "int"},
+                        "3": {"type": "int"},
+                        "7": {"type": "int"},
+                    },
+                },
+                "3": {"type": "int"},
+            },
+        }
+
+        msg = {
+            "1": {
+                "1": 1,
+                "2": room_entries if len(room_entries) > 1 else room_entries[0],
+                "3": {},
+                "5": 6,
+            }
+        }
+        typedef = {
+            "1": {
+                "type": "message",
+                "message_typedef": {
+                    "1": {"type": "int"},
+                    "2": room_entry_typedef,
+                    "3": {"type": "message", "message_typedef": {}},
+                    "5": {"type": "int"},
+                },
+            }
+        }
+        return blackboxprotobuf.encode_message(msg, typedef)
 
     def _build_room_clean_payload(self, room_ids: list[int]) -> bytes:
         """Build CleanTask protobuf with per-room clean params in field 1.2.
@@ -1144,7 +1276,10 @@ class NarwalClient:
     async def get_map(self) -> MapData:
         """Download the full map data."""
         resp = await self.send_command(TOPIC_CMD_GET_MAP, timeout=15.0)
-        map_data = MapData.from_response(resp.data)
+        product_key = ""
+        if self.state.device_info and self.state.device_info.product_key:
+            product_key = self.state.device_info.product_key
+        map_data = MapData.from_response(resp.data, product_key=product_key)
         self.state.map_data = map_data
         return map_data
 
