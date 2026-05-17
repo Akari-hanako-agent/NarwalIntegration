@@ -39,9 +39,20 @@ class RoomInfo:
     room_sub_type: int = 0  # ROOM_TYPE enum from field 2
     category: int = 0  # 1=room, 2=utility (field 4)
     instance_index: int = 0  # numbering for duplicates (field 8)
+    model_key: str = ""  # product_key — selects per-model name overrides
 
     # ROOM_TYPE enum → default display name (from APK libapp.so string analysis)
     ROOM_TYPE_NAMES: dict[int, str] = field(default=None, repr=False)
+
+    # Per-model overrides where Narwal renamed sub-types between models.
+    # Confirmed on Narwal Flow 2 (QxMSPG6VSO, firmware v01.07.16.01) — see #22.
+    MODEL_ROOM_TYPE_OVERRIDES: ClassVar[dict[str, dict[int, str]]] = {
+        "QxMSPG6VSO": {  # Flow 2
+            1: "Master Bedroom",
+            5: "Bathroom",
+            10: "Corridor",
+        },
+    }
 
     def __post_init__(self):
         if self.ROOM_TYPE_NAMES is None:
@@ -70,10 +81,14 @@ class RoomInfo:
 
         Matches Narwal app behavior: unnamed rooms show their type name
         with an instance number suffix for duplicates (e.g. "Bathroom 2").
+        Per-model overrides apply where Narwal renamed sub-types (e.g. Flow 2
+        renames sub_type 1 → "Master Bedroom" vs Flow 1's "Primary Bedroom").
         """
         if self.name:
             return self.name
-        base = self.ROOM_TYPE_NAMES.get(self.room_sub_type, "Room")
+        overrides = self.MODEL_ROOM_TYPE_OVERRIDES.get(self.model_key, {})
+        base = overrides.get(self.room_sub_type) or \
+            self.ROOM_TYPE_NAMES.get(self.room_sub_type, "Room")
         if self.instance_index > 1:
             return f"{base} {self.instance_index}"
         return base
@@ -238,8 +253,16 @@ class MapData:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_response(cls, decoded: dict[str, Any]) -> MapData:
-        """Parse map data from a get_map field5 response."""
+    def from_response(
+        cls, decoded: dict[str, Any], product_key: str = ""
+    ) -> MapData:
+        """Parse map data from a get_map field5 response.
+
+        Args:
+            decoded: blackboxprotobuf-decoded get_map response.
+            product_key: Device product key — propagated to RoomInfo so model-
+                specific room-type name overrides apply (see #22 for Flow 2).
+        """
         payload = decoded.get("2", {})
         if not payload:
             return cls()
@@ -266,6 +289,7 @@ class MapData:
                     room_sub_type=int(room.get("2", 0)),
                     category=int(room.get("4", 0)),
                     instance_index=int(room.get("8", 0)),
+                    model_key=product_key,
                 ))
 
         compressed = payload.get("17", b"")
