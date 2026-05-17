@@ -10,7 +10,8 @@ This integration uses a **local WebSocket connection on port 9002**. Only models
 
 | Model | Status | Notes |
 |-------|--------|-------|
-| **Narwal Flow** (AX12) | **Working** | Primary development target |
+| **Narwal Flow** (AX12) | **Working** | Primary development target. Firmware v01.07.22+ requires a loaded map for `vacuum.start` (auto-fallback handles this — see [#36](https://github.com/sjmotew/NarwalIntegration/issues/36)). |
+| **Narwal Flow 2** (QxMSPG6VSO) | **Working** | Room labels use Flow 2 names (Master Bedroom / Bathroom / Corridor — [#22](https://github.com/sjmotew/NarwalIntegration/issues/22)) |
 | **Freo Z10 Ultra** (CX4) | **Working** | Community confirmed |
 | **Freo X10 Pro** (AX15) | **Working** | Community confirmed ([#12](https://github.com/sjmotew/NarwalIntegration/issues/12)) |
 | **Freo Z Ultra** (CX7) | **Not Compatible** | Port 9002 open but no local broadcasts; cloud-only ([#5](https://github.com/sjmotew/NarwalIntegration/issues/5), confirmed by @Folg0re) |
