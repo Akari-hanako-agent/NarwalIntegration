@@ -146,9 +146,10 @@ class CommandResult(IntEnum):
 class WorkingStatus(IntEnum):
     """Robot working state from robot_base_status field 3 → sub-field 1.
 
-    Values confirmed via live WebSocket monitoring (2026-02-27):
+    Values confirmed via live WebSocket monitoring:
       1  = STANDBY (idle, transition state between cleaning and docked)
-      4  = CLEANING (plan-based start; also stays 4 while returning to dock)
+      2  = DOCKED_V2 (on dock; confirmed v01.07.23.00 while charging at 10-36%)
+      4  = CLEANING (plan-based start; also stays 4 while returning to dock on older FW)
       5  = CLEANING_ALT (observed live: robot was physically stuck when reporting 5)
       10 = DOCKED (on dock, charging)
       14 = CHARGED (on dock, fully charged)
@@ -165,6 +166,7 @@ class WorkingStatus(IntEnum):
 
     UNKNOWN = 0
     STANDBY = 1       # idle / transition state
+    DOCKED_V2 = 2     # on dock (v01.07.23.00+ — replaces DOCKED=10/CHARGED=14 from older FW)
     CLEANING = 4      # active cleaning (stays 4 even while returning to dock)
     CLEANING_ALT = 5  # cleaning — observed when robot was physically stuck; may indicate error/stuck state
     DOCKED = 10       # on dock (does NOT reliably indicate charging vs charged)

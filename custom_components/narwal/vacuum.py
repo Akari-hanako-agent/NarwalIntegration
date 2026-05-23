@@ -31,6 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 WORKING_STATUS_TO_ACTIVITY: dict[WorkingStatus, VacuumActivity] = {
     WorkingStatus.DOCKED: VacuumActivity.DOCKED,
     WorkingStatus.CHARGED: VacuumActivity.DOCKED,
+    WorkingStatus.DOCKED_V2: VacuumActivity.DOCKED,
     WorkingStatus.STANDBY: VacuumActivity.IDLE,
     WorkingStatus.CLEANING: VacuumActivity.CLEANING,
     WorkingStatus.CLEANING_ALT: VacuumActivity.CLEANING,
@@ -91,9 +92,19 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
             return VacuumActivity.CLEANING
         if state.is_docked:
             return VacuumActivity.DOCKED
-        return WORKING_STATUS_TO_ACTIVITY.get(
-            state.working_status, VacuumActivity.IDLE
-        )
+        activity = WORKING_STATUS_TO_ACTIVITY.get(state.working_status)
+        if activity is not None:
+            return activity
+        # Unknown working_status value — infer from dock signals so we
+        # don't report IDLE while the robot is clearly active off-dock.
+        # New firmware versions may introduce values we haven't mapped yet.
+        if not state.is_docked:
+            _LOGGER.warning(
+                "Unmapped working_status %s (%d) while off-dock — reporting CLEANING",
+                state.working_status.name, state.working_status.value,
+            )
+            return VacuumActivity.CLEANING
+        return VacuumActivity.IDLE
 
     @property
     def fan_speed(self) -> str | None:

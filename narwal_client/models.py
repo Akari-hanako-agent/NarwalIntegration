@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import struct
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
+
+_LOGGER = logging.getLogger(__name__)
 
 from .const import CommandResult, FanLevel, MopHumidity, WorkingStatus
 
@@ -579,18 +582,23 @@ class NarwalState:
         cleaning is not active, since the robot can report unmapped states
         (e.g. self-test) while physically docked.
         """
-        if self.working_status in (WorkingStatus.DOCKED, WorkingStatus.CHARGED):
+        if self.working_status in (
+            WorkingStatus.DOCKED, WorkingStatus.CHARGED, WorkingStatus.DOCKED_V2,
+        ):
             return True
         if self.working_status in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT):
             return False
-        # For STANDBY, UNKNOWN, or any other status: check dock field signals
+        # For STANDBY, UNKNOWN, or any other status: check dock field signals.
+        # Values differ across firmware versions:
+        #   Old FW: dock_sub_state=1, dock_field11=2, dock_field47=3
+        #   v01.07.23.00: dock_sub_state absent, dock_field11=3, dock_field47=1
         if self.dock_sub_state == 1:
             return True
         if self.dock_activity > 0:
             return True
-        if self.dock_field11 == 2:
+        if self.dock_field11 >= 2:
             return True
-        if self.dock_field47 == 3:
+        if self.dock_field47 in (1, 3):
             return True
         return False
 
@@ -678,6 +686,12 @@ class NarwalState:
             try:
                 self.working_status = WorkingStatus(int(field3["1"]))
             except (ValueError, TypeError):
+                raw_val = field3["1"]
+                _LOGGER.warning(
+                    "Unknown working_status value: %s — treating as UNKNOWN. "
+                    "Please report this value at the GitHub repo.",
+                    raw_val,
+                )
                 self.working_status = WorkingStatus.UNKNOWN
             # Sub-field 2 = 1 means paused (overlay on cleaning state)
             self.is_paused = bool(field3.get("2"))
