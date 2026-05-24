@@ -135,11 +135,15 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
                 f"{DOMAIN}_map_fetch",
             )
 
-        # Detect return-to-dock transition: CLEANING/CLEANING_ALT → STANDBY.
+        # Detect return-to-dock transition: CLEANING/CLEANING_ALT → docked state.
         # Broadcast dock fields are stale after docking — immediate poll
         # refreshes them so UI shows DOCKED instead of IDLE.
+        # On older FW the transition is → STANDBY; on v01.07.23+ it may
+        # go directly to DOCKED_V2(2).
         if (
-            state.working_status == WorkingStatus.STANDBY
+            state.working_status in (
+                WorkingStatus.STANDBY, WorkingStatus.DOCKED_V2,
+            )
             and self._prev_working_status
             in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT)
         ):

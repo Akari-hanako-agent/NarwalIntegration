@@ -109,8 +109,12 @@ class TestStartRooms:
             assert payload_arg != client._DEFAULT_CLEAN_PAYLOAD
 
 
-class TestStartRoomsV2Fallback:
-    """Tests for the legacy→v2 schema fallback in start_rooms (issue #37)."""
+class TestStartRoomsV2First:
+    """Tests for the v2-first schema order in start_rooms (#37 fix).
+
+    start_rooms() now tries v2 nested-room schema first (fixes ack-and-ignore
+    on newer firmware), falling back to legacy flat-room on NOT_APPLICABLE.
+    """
 
     def _connected_client(self) -> NarwalClient:
         client = NarwalClient("127.0.0.1")
@@ -118,8 +122,8 @@ class TestStartRoomsV2Fallback:
         client._connected = True
         return client
 
-    def test_success_on_legacy_does_not_retry(self) -> None:
-        """If the legacy room payload is accepted, no v2 retry happens."""
+    def test_success_on_v2_does_not_retry(self) -> None:
+        """If the v2 room payload is accepted, no legacy retry happens."""
         client = self._connected_client()
         success = CommandResponse(result_code=CommandResult.SUCCESS)
 
@@ -134,9 +138,28 @@ class TestStartRoomsV2Fallback:
         assert result is success
         mock_send.assert_awaited_once()
 
-    def test_not_applicable_triggers_v2_retry(self) -> None:
-        """NOT_APPLICABLE on the legacy payload triggers a v2 retry with
-        the same caller-supplied room IDs (not all rooms)."""
+    def test_v2_sends_correct_room_ids(self) -> None:
+        """v2 payload encodes exactly the requested rooms."""
+        client = self._connected_client()
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            asyncio.get_event_loop().run_until_complete(
+                client.start_rooms([5, 7])
+            )
+
+        import blackboxprotobuf
+        payload = mock_send.await_args.kwargs.get("payload")
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        entries = decoded["1"]["2"]
+        ids = [e["1"]["2"] for e in entries]
+        assert ids == [5, 7]
+
+    def test_not_applicable_triggers_legacy_retry(self) -> None:
+        """NOT_APPLICABLE on v2 triggers a legacy flat-room retry."""
         client = self._connected_client()
         not_applicable = CommandResponse(result_code=CommandResult.NOT_APPLICABLE)
         success = CommandResponse(result_code=CommandResult.SUCCESS)
@@ -150,15 +173,9 @@ class TestStartRoomsV2Fallback:
             )
 
         assert mock_send.await_count == 2
-        legacy_payload = mock_send.await_args_list[0].kwargs.get("payload")
-        v2_payload = mock_send.await_args_list[1].kwargs.get("payload")
-        assert legacy_payload != v2_payload
-        # v2 payload must encode exactly the requested rooms, not all rooms
-        import blackboxprotobuf
-        decoded, _ = blackboxprotobuf.decode_message(v2_payload)
-        entries = decoded["1"]["2"]
-        ids = [e["1"]["2"] for e in entries]
-        assert ids == [5, 7]
+        v2_payload = mock_send.await_args_list[0].kwargs.get("payload")
+        legacy_payload = mock_send.await_args_list[1].kwargs.get("payload")
+        assert v2_payload != legacy_payload
         assert result is success
 
     def test_conflict_does_not_trigger_retry(self) -> None:
@@ -176,26 +193,3 @@ class TestStartRoomsV2Fallback:
 
         mock_send.assert_awaited_once()
         assert result.result_code == CommandResult.CONFLICT
-
-    def test_force_v2_skips_legacy_attempt(self) -> None:
-        """force_v2=True for firmwares that ack legacy but ignore rooms."""
-        client = self._connected_client()
-        success = CommandResponse(result_code=CommandResult.SUCCESS)
-
-        with patch.object(
-            client, "send_command", new_callable=AsyncMock
-        ) as mock_send:
-            mock_send.return_value = success
-            result = asyncio.get_event_loop().run_until_complete(
-                client.start_rooms([5, 7], force_v2=True)
-            )
-
-        mock_send.assert_awaited_once()
-        # Payload must be the v2 schema (single call only)
-        import blackboxprotobuf
-        payload = mock_send.await_args.kwargs.get("payload")
-        decoded, _ = blackboxprotobuf.decode_message(payload)
-        entries = decoded["1"]["2"]
-        ids = [e["1"]["2"] for e in entries]
-        assert ids == [5, 7]
-        assert result is success

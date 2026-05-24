@@ -123,6 +123,73 @@ class TestNarwalState:
         assert state.is_paused
         assert not state.is_cleaning  # is_cleaning is False when paused
 
+    # --- v01.07.23+ firmware tests ---
+
+    def test_docked_v2_working_status(self) -> None:
+        """DOCKED_V2(2) on v01.07.23+ firmware maps to docked."""
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2, "4": 1, "11": 3},  # new FW sub-fields
+            "11": 3, "47": 1,
+        })
+        assert state.working_status == WorkingStatus.DOCKED_V2
+        assert state.is_docked
+
+    def test_new_fw_field3_unknown_subfields_logged(self) -> None:
+        """New firmware sub-fields (4, 11) are parsed without error."""
+        state = NarwalState()
+        # Should not raise — unknown sub-fields logged at debug level
+        state.update_from_base_status({"3": {"1": 2, "4": 99, "11": 3}})
+        assert state.working_status == WorkingStatus.DOCKED_V2
+
+    def test_new_fw_dock_field11_gte2(self) -> None:
+        """v01.07.23 dock_field11=3 detected as docked via >= 2 check."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 1}, "11": 3})
+        assert state.dock_field11 == 3
+        assert state.is_docked
+
+    def test_new_fw_dock_field47_eq1(self) -> None:
+        """v01.07.23 dock_field47=1 detected as docked."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 1}, "47": 1})
+        assert state.dock_field47 == 1
+        assert state.is_docked
+
+    def test_field3_as_list_parsed(self) -> None:
+        """bbp can return field3 as a list — first element should be used."""
+        state = NarwalState()
+        state.update_from_base_status({"3": [{"1": 4, "2": 1}]})
+        assert state.working_status == WorkingStatus.CLEANING
+        assert state.is_paused
+
+    def test_field3_empty_list_no_crash(self) -> None:
+        """Empty list for field3 should not crash."""
+        state = NarwalState()
+        state.update_from_base_status({"3": []})
+        assert state.working_status == WorkingStatus.UNKNOWN  # unchanged default
+
+    def test_field3_not_dict_no_crash(self) -> None:
+        """Non-dict field3 (e.g., bytes from bbp) should not crash."""
+        state = NarwalState()
+        state.update_from_base_status({"3": b"\x08\x02"})
+        assert state.working_status == WorkingStatus.UNKNOWN  # unchanged default
+
+    def test_absent_paused_subfield_resets_to_false(self) -> None:
+        """When field3.2 is absent (protobuf default=0), is_paused resets."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 4, "2": 1}})
+        assert state.is_paused
+        # Next broadcast without "2" key → paused resets to False
+        state.update_from_base_status({"3": {"1": 4}})
+        assert not state.is_paused
+
+    def test_unknown_working_status_value(self) -> None:
+        """Unmapped working_status value falls back to UNKNOWN."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 99}})
+        assert state.working_status == WorkingStatus.UNKNOWN
+
     def test_update_from_base_status(self) -> None:
         state = NarwalState()
         state.update_from_base_status({

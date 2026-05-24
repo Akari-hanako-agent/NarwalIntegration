@@ -1130,25 +1130,19 @@ class NarwalClient:
         return blackboxprotobuf.encode_message(msg, typedef)
 
     async def start_rooms(
-        self, room_ids: list[int], force_v2: bool = False
+        self, room_ids: list[int],
     ) -> CommandResponse:
         """Start room-specific cleaning.
 
-        Sends clean/plan/start with the user-selected rooms. Tries the
-        legacy flat-room schema first (works on Flow firmware < v01.07.22),
-        falling back to the v2 nested-room schema on NOT_APPLICABLE — same
-        firmware-schema mismatch as #36 and #37.
-
-        Issue #37 reports that some newer firmwares accept the legacy
-        topic with SUCCESS but silently ignore the room list, falling back
-        to the first Narwal-app shortcut. For those, callers can pass
-        force_v2=True to skip the legacy attempt.
+        Sends clean/plan/start with the user-selected rooms. Tries the v2
+        nested-room schema first (required by firmware v01.07.22+, and fixes
+        the ack-but-ignore behavior in #37 where legacy schema returns
+        SUCCESS but the robot runs the app shortcut instead of HA-selected
+        rooms). Falls back to legacy flat-room schema on NOT_APPLICABLE
+        for older firmware.
 
         Args:
             room_ids: List of room IDs from RoomInfo.room_id.
-            force_v2: Skip the legacy schema and send v2 directly. Set this
-                when the legacy schema returns SUCCESS but the wrong rooms
-                actually clean (firmware ack-but-ignore behavior).
 
         Returns:
             CommandResponse with result code from whichever schema landed.
@@ -1156,30 +1150,21 @@ class NarwalClient:
         if not room_ids:
             return await self.start()
 
-        if force_v2:
-            _LOGGER.info(
-                "start_rooms(force_v2=True): sending v2 schema (%d rooms)",
-                len(room_ids),
-            )
-            payload = self._build_clean_payload_v2(room_ids)
-            return await self.send_command(
-                TOPIC_CMD_START_CLEAN, payload=payload, timeout=10.0,
-            )
-
-        payload = self._build_room_clean_payload(room_ids)
+        payload_v2 = self._build_clean_payload_v2(room_ids)
         resp = await self.send_command(
-            TOPIC_CMD_START_CLEAN, payload=payload, timeout=10.0,
+            TOPIC_CMD_START_CLEAN, payload=payload_v2, timeout=10.0,
         )
         if resp.result_code != CommandResult.NOT_APPLICABLE:
             return resp
 
+        # v2 rejected — try legacy flat-room schema (older firmware)
         _LOGGER.info(
-            "start_rooms(): legacy payload rejected, retrying with v2 schema (%d rooms)",
+            "start_rooms(): v2 payload rejected, retrying with legacy schema (%d rooms)",
             len(room_ids),
         )
-        payload_v2 = self._build_clean_payload_v2(room_ids)
+        payload_legacy = self._build_room_clean_payload(room_ids)
         return await self.send_command(
-            TOPIC_CMD_START_CLEAN, payload=payload_v2, timeout=10.0,
+            TOPIC_CMD_START_CLEAN, payload=payload_legacy, timeout=10.0,
         )
 
     async def start_easy_clean(self) -> CommandResponse:

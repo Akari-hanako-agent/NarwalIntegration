@@ -567,16 +567,15 @@ class NarwalState:
 
     @property
     def is_docked(self) -> bool:
-        """True when on dock: DOCKED(10), CHARGED(14), or dock field signals.
+        """True when on dock: DOCKED(10), CHARGED(14), DOCKED_V2(2), or dock field signals.
 
         Dock signals (checked for STANDBY, UNKNOWN, and any unmapped status):
-          - dock_sub_state == 1 (field 3.10, confirmed live)
-          - dock_activity > 0 (field 3.12, values 2/6 when docked)
-          - dock_field11 == 2 (field 11: 2=docked, 1=undocked)
-          - dock_field47 == 3 (field 47: 3=docked, 2=undocked)
-
-        Fields 11 and 47 validated via dock_research.py guided test with
-        5 captures across on-dock and off-dock states — perfect correlation.
+          - dock_sub_state == 1 (field 3.10, old FW only)
+          - dock_activity > 0 (field 3.12, old FW only)
+          - dock_field11 >= 2 (field 11: old FW 2=docked/1=undocked,
+                               v01.07.23 3=docked)
+          - dock_field47 in (1, 3) (field 47: old FW 3=docked/2=undocked,
+                                    v01.07.23 1=docked)
 
         Dock fields are checked for STANDBY/UNKNOWN and any status where
         cleaning is not active, since the robot can report unmapped states
@@ -681,37 +680,60 @@ class NarwalState:
             except (ValueError, TypeError):
                 self.dock_field47 = 0
         # Field 3 is a nested message: {1: state_int, ...}
+        # Sub-field layout differs across firmware versions:
+        #   Old FW: {1: ws, 2: paused, 3: dock_presence, 7: returning, 10: dock_sub, 12: dock_activity}
+        #   v01.07.23+: {1: ws, 4: ?, 11: ?} — sub-fields 2/3/7/10/12 absent
+        # bbp may also return a list for repeated messages.
         field3 = decoded.get("3")
-        if isinstance(field3, dict) and "1" in field3:
-            try:
-                self.working_status = WorkingStatus(int(field3["1"]))
-            except (ValueError, TypeError):
-                raw_val = field3["1"]
-                _LOGGER.warning(
-                    "Unknown working_status value: %s — treating as UNKNOWN. "
-                    "Please report this value at the GitHub repo.",
-                    raw_val,
-                )
-                self.working_status = WorkingStatus.UNKNOWN
-            # Sub-field 2 = 1 means paused (overlay on cleaning state)
+        if isinstance(field3, list):
+            field3 = field3[0] if field3 else None
+        if isinstance(field3, dict):
+            if "1" in field3:
+                try:
+                    self.working_status = WorkingStatus(int(field3["1"]))
+                except (ValueError, TypeError):
+                    raw_val = field3["1"]
+                    _LOGGER.warning(
+                        "Unknown working_status value: %s — treating as UNKNOWN. "
+                        "Please report this value at the GitHub repo.",
+                        raw_val,
+                    )
+                    self.working_status = WorkingStatus.UNKNOWN
+            # Sub-field 2: paused overlay (0 or absent = not paused, 1 = paused)
             self.is_paused = bool(field3.get("2"))
-            # Sub-field 7 = 1 means returning to dock (confirmed via live test)
-            self.is_returning_to_dock = bool(field3.get("7"))
-            # Sub-field 10 = dock sub-state (1=docked, 2=docking in progress)
-            try:
-                self.dock_sub_state = int(field3.get("10", 0))
-            except (ValueError, TypeError):
-                self.dock_sub_state = 0
-            # Sub-field 12 = dock activity (values 2, 6 observed when docked)
-            try:
-                self.dock_activity = int(field3.get("12", 0))
-            except (ValueError, TypeError):
-                self.dock_activity = 0
-            # Sub-field 3 = dock presence (1/6=on dock, 2=off dock)
-            try:
-                self.dock_presence = int(field3.get("3", 0))
-            except (ValueError, TypeError):
-                self.dock_presence = 0
+            # Sub-field 7: returning to dock on old FW (value 1 = returning).
+            # On newer FW, field 7 is repurposed (e.g. value 7 during cleaning).
+            # Only treat value 1 as returning — other values are not the flag.
+            self.is_returning_to_dock = field3.get("7") == 1
+            if "10" in field3:
+                try:
+                    self.dock_sub_state = int(field3["10"])
+                except (ValueError, TypeError):
+                    pass
+            if "12" in field3:
+                try:
+                    self.dock_activity = int(field3["12"])
+                except (ValueError, TypeError):
+                    pass
+            if "3" in field3:
+                try:
+                    self.dock_presence = int(field3["3"])
+                except (ValueError, TypeError):
+                    pass
+            # Log unrecognized sub-fields for future firmware mapping
+            _known_f3 = {"1", "2", "3", "7", "10", "12"}
+            _unknown_f3 = set(field3.keys()) - _known_f3
+            if _unknown_f3:
+                _LOGGER.debug(
+                    "field3 unrecognized sub-fields: %s",
+                    {k: field3[k] for k in sorted(_unknown_f3)},
+                )
+        elif field3 is not None:
+            _LOGGER.warning(
+                "field3 is %s (expected dict): %r — state may not update. "
+                "Please report this at the GitHub repo.",
+                type(field3).__name__, field3,
+            )
         if "2" in decoded:
             # Field 2 = real-time battery SOC as float32
             # (e.g. 1118175232 → 83.0%; bbp may return int or float)
