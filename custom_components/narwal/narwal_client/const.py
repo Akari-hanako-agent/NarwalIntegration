@@ -153,6 +153,7 @@ class WorkingStatus(IntEnum):
       5  = CLEANING_ALT (observed live: robot was physically stuck when reporting 5)
       10 = DOCKED (on dock, charging)
       14 = CHARGED (on dock, fully charged)
+      19 = TASK_COMPLETED (transitional: scheduled task finished, returning to base)
 
     Field 3 sub-fields (confirmed live):
       3.2  = 1 means PAUSED (overlay on CLEANING state)
@@ -171,6 +172,7 @@ class WorkingStatus(IntEnum):
     CLEANING_ALT = 5  # cleaning — observed when robot was physically stuck; may indicate error/stuck state
     DOCKED = 10       # on dock (does NOT reliably indicate charging vs charged)
     CHARGED = 14      # on dock (reported before 100% — use battery_level for charge state)
+    TASK_COMPLETED = 19  # transitional: task finished, robot returning to base (#41)
     # PLACEHOLDER: error state value not yet observed live.
     # Trigger a real error (e.g., pick up robot mid-clean) to discover the value.
     ERROR = 99
