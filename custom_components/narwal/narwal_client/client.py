@@ -905,49 +905,42 @@ class NarwalClient:
     async def start(self, clean_mode: int = 0, **kwargs) -> CommandResponse:
         """Start whole-house cleaning.
 
-        Tries the legacy minimal payload first (works on Flow firmware
-        < v01.07.22). If the robot returns NOT_APPLICABLE — observed on
-        firmware v01.07.22.00 in issue #36 — falls back to the v2 schema
-        that includes an explicit room list, mirroring what the Narwal
-        app sends on newer firmware.
+        Tries the v2 room-list schema first (required by firmware
+        v01.07.22+). Falls back to the legacy minimal payload on
+        NOT_APPLICABLE for older firmware.
 
-        The v2 fallback requires the map to be loaded (get_map called)
-        so we know which rooms to include.
+        The v2 payload requires the map to be loaded (get_map called)
+        so we know which rooms to include. If map data is not yet
+        cached, falls back to legacy immediately.
 
         Args:
             clean_mode: 0=sweep+mop, 1=sweep then mop, 2=sweep, 3=mop.
         """
-        resp = await self.send_command(
+        # Try v2 first (newer firmware requires it and it carries clean_mode)
+        if self.state.map_data and self.state.map_data.rooms:
+            room_ids = [r.room_id for r in self.state.map_data.rooms if r.room_id]
+            if room_ids:
+                _LOGGER.info(
+                    "start(): trying v2 schema (%d rooms, clean_mode=%d)",
+                    len(room_ids), clean_mode,
+                )
+                payload = self._build_clean_payload_v2(room_ids, clean_mode=clean_mode)
+                resp = await self.send_command(
+                    TOPIC_CMD_START_CLEAN, payload=payload, timeout=10.0,
+                )
+                if resp.result_code != CommandResult.NOT_APPLICABLE:
+                    return resp
+                _LOGGER.info("start(): v2 rejected, falling back to legacy payload")
+            else:
+                _LOGGER.warning("start(): cached map has 0 rooms with IDs")
+        else:
+            _LOGGER.info("start(): no map data cached, trying legacy payload")
+
+        # Fall back to legacy minimal payload (older firmware)
+        return await self.send_command(
             TOPIC_CMD_START_CLEAN,
             payload=self._DEFAULT_CLEAN_PAYLOAD,
             timeout=10.0,
-        )
-        if resp.result_code != CommandResult.NOT_APPLICABLE:
-            return resp
-
-        # Legacy payload rejected — likely newer firmware. Need the room
-        # list from the cached map to build a v2 payload.
-        if not (self.state.map_data and self.state.map_data.rooms):
-            _LOGGER.warning(
-                "start() got NOT_APPLICABLE and no map rooms cached; "
-                "cannot build v2 payload. Call get_map() first."
-            )
-            return resp
-
-        room_ids = [r.room_id for r in self.state.map_data.rooms if r.room_id]
-        if not room_ids:
-            _LOGGER.warning(
-                "start() got NOT_APPLICABLE but cached map has 0 rooms with IDs"
-            )
-            return resp
-
-        _LOGGER.info(
-            "start(): legacy payload rejected, retrying with v2 schema (%d rooms, clean_mode=%d)",
-            len(room_ids), clean_mode,
-        )
-        payload = self._build_clean_payload_v2(room_ids, clean_mode=clean_mode)
-        return await self.send_command(
-            TOPIC_CMD_START_CLEAN, payload=payload, timeout=10.0,
         )
 
     def _build_clean_payload_v2(
