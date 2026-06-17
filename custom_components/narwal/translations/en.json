@@ -24,6 +24,17 @@
         "name": "Vacuum"
       }
     },
+    "select": {
+      "clean_mode": {
+        "name": "Clean mode",
+        "state": {
+          "sweep_mop": "Sweep & Mop",
+          "sweep_then_mop": "Sweep then Mop",
+          "sweep": "Sweep only",
+          "mop": "Mop only"
+        }
+      }
+    },
     "sensor": {
       "cleaning_area": {
         "name": "Cleaning area"

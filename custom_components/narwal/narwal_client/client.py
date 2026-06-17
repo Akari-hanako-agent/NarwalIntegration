@@ -902,7 +902,7 @@ class NarwalClient:
     # start() falls back to the v2 room-list schema. See issue #36.
     _DEFAULT_CLEAN_PAYLOAD = bytes.fromhex("0a0e12002a0a0a060803100218012a00")
 
-    async def start(self, **kwargs) -> CommandResponse:
+    async def start(self, clean_mode: int = 0, **kwargs) -> CommandResponse:
         """Start whole-house cleaning.
 
         Tries the legacy minimal payload first (works on Flow firmware
@@ -913,6 +913,9 @@ class NarwalClient:
 
         The v2 fallback requires the map to be loaded (get_map called)
         so we know which rooms to include.
+
+        Args:
+            clean_mode: 0=sweep+mop, 1=sweep then mop, 2=sweep, 3=mop.
         """
         resp = await self.send_command(
             TOPIC_CMD_START_CLEAN,
@@ -939,10 +942,10 @@ class NarwalClient:
             return resp
 
         _LOGGER.info(
-            "start(): legacy payload rejected, retrying with v2 schema (%d rooms)",
-            len(room_ids),
+            "start(): legacy payload rejected, retrying with v2 schema (%d rooms, clean_mode=%d)",
+            len(room_ids), clean_mode,
         )
-        payload = self._build_clean_payload_v2(room_ids)
+        payload = self._build_clean_payload_v2(room_ids, clean_mode=clean_mode)
         return await self.send_command(
             TOPIC_CMD_START_CLEAN, payload=payload, timeout=10.0,
         )
@@ -953,7 +956,7 @@ class NarwalClient:
         suction: int = 3,
         mop_humidity: int = 2,
         passes: int = 1,
-        clean_mode: int = 3,
+        clean_mode: int = 0,
     ) -> bytes:
         """Build clean task payload using the v2 schema (firmware v01.07.22+).
 
@@ -972,15 +975,16 @@ class NarwalClient:
         Outer envelope:
             {1: {1: 1, 2: [<rooms>], 3: {}, 5: 6}}
 
-        Defaults match a normal whole-house clean: max Flow 1 suction (3),
-        sweep+mop (3 in v2 schema), single pass, wet mop.
+        Defaults: max suction (3), wet mop (2), single pass, sweep+mop (0).
+        Confirmed on Narwal Flow v01.07.23.00: 0=sweep+mop, 1=sweep then mop,
+        2=sweep only, 3=mop only.
 
         Args:
             room_ids: List of room IDs from RoomInfo.room_id.
             suction: 1-3 (Flow 1) / 1-4 (Flow 2). Default 3 = max for Flow 1.
             mop_humidity: 1=dry, 2=wet, 3=very wet. Default 2.
             passes: Number of passes. Default 1.
-            clean_mode: v2 schema cleanMode (3 observed for sweep+mop).
+            clean_mode: 0=sweep+mop, 1=sweep then mop, 2=sweep, 3=mop.
 
         Returns:
             Encoded protobuf bytes for clean/plan/start.

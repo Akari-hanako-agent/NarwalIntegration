@@ -22,7 +22,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .narwal_client import CommandResult, FanLevel, NarwalCommandError, WorkingStatus
 
 from . import NarwalConfigEntry
-from .const import FAN_SPEED_LIST, FAN_SPEED_MAP
+from .const import CLEAN_MODE_MAP, FAN_SPEED_LIST, FAN_SPEED_MAP
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 
@@ -144,7 +144,9 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         if is_cleaning and state.is_paused:
             await self.coordinator.client.resume(timeout=self._ACTION_TIMEOUT)
         else:
-            resp = await self.coordinator.client.start()
+            resp = await self.coordinator.client.start(
+                clean_mode=self.coordinator.clean_mode,
+            )
             _LOGGER.info(
                 "Start command response: code=%s, success=%s",
                 resp.result_code, resp.success,

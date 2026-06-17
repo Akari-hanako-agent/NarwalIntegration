@@ -29,6 +29,7 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.CAMERA,
+    Platform.SELECT,
 ]
 
 FAN_SPEED_MAP: dict[str, FanLevel] = {
@@ -39,3 +40,14 @@ FAN_SPEED_MAP: dict[str, FanLevel] = {
 }
 
 FAN_SPEED_LIST: list[str] = list(FAN_SPEED_MAP.keys())
+
+# Clean mode values for the v2 protocol (confirmed on Narwal Flow v01.07.23.00).
+# These match the order shown in the Narwal app.
+CLEAN_MODE_MAP: dict[str, int] = {
+    "sweep_mop": 0,        # 扫拖同时
+    "sweep_then_mop": 1,   # 先扫后拖
+    "sweep": 2,            # 扫地
+    "mop": 3,              # 拖地
+}
+
+CLEAN_MODE_LIST: list[str] = list(CLEAN_MODE_MAP.keys())
